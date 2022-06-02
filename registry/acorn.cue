@@ -93,7 +93,7 @@ let config = data.registryConfig
 
 data: storageDriver: params.deploy.storageConfig
 if len(data.storageDriver) == 0 {
-	data: StorageDriver: filesystem: rootdirectory: "/var/lib/registry"
+	data: storageDriver: filesystem: rootdirectory: "/var/lib/registry"
 }
 
 data: authConfig: params.deploy.authConfig
