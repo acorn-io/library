@@ -3,7 +3,7 @@ import "encoding/yaml"
 containers: {
 	registry: {
 		image:   "registry:2.8.1"
-		publish: "\(params.deploy.registryPublicPort):\(params.deploy.registryInternalPort)/\(params.deploy.registryProto)"
+		publish: "5000:5000/http"
 		files: {
 			"/auth/htpasswd":                  "secret://generated-htpasswd/content?onchange=no-action"
 			"/etc/docker/registry/config.yml": "secret://registry-config/template?onchange=redeploy"
@@ -34,15 +34,6 @@ jobs: {
 
 params: {
 	deploy: {
-		// This is the port to publish the registry on
-		registryPublicPort: (int | string) | *5000
-
-		// Internal server port defaults to 5000
-		registryInternalPort: (int | string) | *5000
-
-		// This is the protocol default is 'http' but 'tcp' is available. For TLS expose on http and add TLS to ingress
-		registryProto: *"http" | "tcp"
-
 		//Cache backend for blobdescriptor default 'inmemory' you can also use redis
 		storageCache: *"inmemory" | "redis"
 
@@ -109,7 +100,7 @@ data: registryConfig: {
 	storage: data.storageDriver
 	auth: data.authConfig
 	http: {
-		addr:   ":\(params.deploy.registryInternalPort)"
+		addr:   ":5000"
 		secret: "${secret://registry-http-secret/token}"
 		headers: {
 			"X-Content-Type-Options": ["nosniff"]
