@@ -10,8 +10,11 @@ containers: [Name= =~"redis"]: {
 	if deployParams.redisLeaderCount > 1 {
 		ports: data.busPort
 	}
-	publish: data.stdPort
 }
+// This goes away once we have expose and can publish at run time
+containers: [Name= =~"redis-[0-9]"]: publish:        data.stdPort
+containers: [Name= =~"redis-follower-[0-9]"]: ports: data.stdPort
+
 volumes: [Name= =~"redis"]: accessModes: ["readWriteOnce"]
 secrets: [Name= =~"redis-[a-zA-Z]*-config"]: type: "template"
 jobs: [Name= =~"redis"]: image:                    "redis:7-alpine"
