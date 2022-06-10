@@ -2,24 +2,7 @@ import "text/tabwriter"
 
 import "list"
 
-// Setting common config settings
-containers: [Name= =~"redis"]: {
-	image: "redis:7-alpine"
-	cmd: ["/etc/redis/6379.conf"]
-	// std port should be exposed to be consumed outside the acorn
-	if deployParams.redisLeaderCount > 1 {
-		ports: data.busPort
-	}
-}
-// This goes away once we have expose and can publish at run time
-containers: [Name= =~"redis-[0-9]"]: publish:        data.stdPort
-containers: [Name= =~"redis-follower-[0-9]"]: ports: data.stdPort
-
-volumes: [Name= =~"redis"]: accessModes: ["readWriteOnce"]
-secrets: [Name= =~"redis-[a-zA-Z]*-config"]: type: "template"
-jobs: [Name= =~"redis"]: image:                    "redis:7-alpine"
-
-// collision in the token secret
+// prevents collision when using in token secrets
 let deployParams = params.deploy
 params: {
 	deploy: {
@@ -29,34 +12,80 @@ params: {
 		// Redis replicas per leader. To run in stand alone set to 0 
 		redisReplicaCount: int | *1
 
-		// Redis leader replica count. Setting this value above 1 will configure Redis cluster.
+		// Redis leader replica count. Setting this value 3 and above will configure Redis cluster.
 		redisLeaderCount: int | *1
+
+		// User provided configuration for leader and cluster servers
+		redisLeaderConfig: {}
+
+		// User provided configuration for leader and cluster servers
+		redisFollowerConfig: {}
 	}
 }
 
-data: followerCount: [
-			if deployParams.redisLeaderCount > 1 {0},
-			if deployParams.redisLeaderCount == 1 {deployParams.redisReplicaCount},
-][0]
+// Leaders
+for l in list.Range(0, deployParams.redisLeaderCount, 1) {
+	// Followers
+	for f in list.Range(0, deployParams.redisReplicaCount+1, 1) {
+		containers: {
+			"redis-\(l)-\(f)": {
+				image: "redis:7-alpine"
+				cmd: ["/etc/redis/6379.conf"]
+				if deployParams.redisLeaderCount > 1 {
+					ports: "16379:16379/tcp"
+				}
+				publish: "6379:6379/tcp"
+				env: {
+					"REDISCLI_AUTH": "secret://redis-auth/token"
+				}
+				if deployParams.redisLeaderCount > 1 || f == 0 {
+					files: {
+						"/etc/redis/6379.conf": "secret://redis-leader-config/template"
+					}
+				}
+				if deployParams.redisLeaderCount == 1 && f > 0 {
+					files: {
+						"/etc/redis/6379.conf": "secret://redis-follower-config/template"
+					}
+				}
+				dirs: {
+					"/data":  "volume://redis-data-dir-\(l)-\(f)"
+					"/acorn": "ephemeral://acorn-data-\(l)-\(f)"
+				}
+			}
+		}
 
-data: clusterReplicationFactor: [
-				if deployParams.redisLeaderCount == 1 {1},
-				if deployParams.redisReplicaCount > 0 {deployParams.redisReplicaCount + 1},
-				1,
-][0]
-
-data: {
-	redisCommonConfig: {
-		requirepass: "${secret://redis-auth/token}"
-		port:        6379
-		dir:         "/data"
-		"######":    " ROLE CONFIG ######"
+		volumes: "redis-data-dir-\(l)-\(f)": accessModes: ["readWriteOnce"]
 	}
-	redisLeaderConfig: "tcp-keepalive": 60
-	stdPort: ["6379:6379/tcp"]
-	busPort: ["16379:16379/tcp"]
-	clusterReplicationFactor: int & >0 | *1
-	serverCount:              deployParams.redisLeaderCount * data.clusterReplicationFactor
+}
+
+if deployParams.redisReplicaCount != 0 {
+	let followerConfigTemplate = data.redis.commonConfig & data.redis.followerConfig & deployParams.redisFollowerConfig
+	data: redis: followerConfig: {
+		slaveof:           "redis-0-0 6379"
+		"slave-read-only": "yes"
+	}
+	secrets: "redis-follower-config": {
+		type: "template"
+		data: template: tabwriter.Write([ for i, v in followerConfigTemplate {"\(i) \(v)"}])
+	}
+}
+// End follower replica block
+
+let leaderConfigTemplate = data.redis.commonConfig & data.redis.leaderConfig & deployParams.redisLeaderConfig
+data: {
+	redis: {
+		commonConfig: {
+			requirepass: "${secret://redis-auth/token}"
+			masterauth:  "${secret://redis-auth/token}"
+			port:        6379
+			dir:         "/data"
+			"######":    " ROLE CONFIG ######"
+		}
+		leaderConfig: "tcp-keepalive": int | *60
+		followerConfig: {...} | *{}
+	}
+	serverCount: deployParams.redisLeaderCount + (deployParams.redisLeaderCount * deployParams.redisReplicaCount)
 }
 
 secrets: {
@@ -65,37 +94,25 @@ secrets: {
 		params: length: 32
 		data: token:    "\(deployParams.redisPassword)"
 	}
-	"redis-leader-config": data: template: tabwriter.Write([ for i, v in leaderConfigTemplate {"\(i) \(v)"}])
-}
-
-// Allows use secret template without name collision
-let leaderConfigTemplate = data.redisCommonConfig & data.redisLeaderConfig
-
-// Sets up the data directory volume so that it is either ephemeral or bound to a volume.
-for i in list.Range(0, data.serverCount, 1) {
-	containers: {
-		"redis-\(i)": {
-			alias: "redis"
-			files: {
-				"/etc/redis/6379.conf": "secret://redis-leader-config/template"
-			}
-			dirs: {
-				"/data": "volume://redis-leader-data-dir-\(i)"
-			}
-		}
+	"redis-leader-config": {
+		type: "template"
+		data: template: tabwriter.Write([ for i, v in leaderConfigTemplate {"\(i) \(v)"}])
 	}
-	volumes: "redis-leader-data-dir-\(i)": {}
+	// Provides user a target to bind in secret data
+	"redis-user-data": type: "opaque"
 }
 
 if deployParams.redisLeaderCount > 1 {
-	data: redisLeaderConfig: {
-		"cluster-enabled":      "yes"
-		"cluster-config-file":  "nodes.conf"
-		"cluster-node-timeout": 5000
-		appendonly:             "yes"
-	}
+	data: redis:
+		leaderConfig: {
+			"cluster-enabled":      "yes"
+			"cluster-config-file":  "nodes.conf"
+			"cluster-node-timeout": int | *5000
+			appendonly:             "yes"
+		}
 	jobs: {
 		"redis-init-cluster": {
+			image: "redis:7-alpine"
 			env: {
 				"REDISCLI_AUTH": "secret://redis-auth/token"
 			}
@@ -103,46 +120,143 @@ if deployParams.redisLeaderCount > 1 {
 				"/acorn": "ephemeral://valid-name"
 			}
 			files: {
-				"/acorn/create-cluster-init-script.sh": """
+				"acorn/create-cluster-init-script.sh": "secret://cluster-init-script/template"
+			}
+			cmd: ["/bin/sh", "/acorn/create-cluster-init-script.sh", "6"]
+		}
+	}
+	// Only use this for the init template
+	let serverCount = data.serverCount
+	secrets: {
+		"cluster-init-script": {
+			type: "template"
+			data: {
+				template: """
 				#!/bin/sh
+				set -x
+				set -e
+
+				replica_count=\(deployParams.redisReplicaCount)
+				leader_server_count=\(deployParams.redisLeaderCount)
+				total_server_count=\(serverCount)
+
 
 				cluster_init_script=/acorn/redis-cluster-init.sh
 
-				cat > $cluster_init_script <<EOF
-				#!/bin/bash
-				echo "yes" |redis-cli --cluster create $(for i in $(seq 0 \(data.serverCount-1));do echo -n "redis-${i}:6379 ";done) --cluster-replicas \(deployParams.redisReplicaCount)
-				EOF
+				# wait until services become available
+				for l in $(seq 0 \(deployParams.redisLeaderCount-1)); do
+				  for f in $(seq 0 \(deployParams.redisReplicaCount-1)); do
+				    echo "checking redis-${l}-${f}"
+				  	until timeout -s 3 5 redis-cli -h redis-${l}-${f} -p 6379 ping; do echo "waiting...";sleep 5;done
+				  done
+				done
 
-				chmod u+x ${cluster_init_script}
+				known_nodes=$(redis-cli -h redis-0-0 cluster info |grep cluster_known_nodes|tr -d '[:space:]'|cut -d: -f2)
+				cluster_size=$(redis-cli -h redis-0-0 cluster info |grep cluster_size|tr -d '[:space:]'|cut -d: -f2)
+				if [ "${cluster_size}" -eq "0" ]; then
+				  echo "initializing cluster..."
+				
+				  node_string=
+				  for l in $(seq 0 \(deployParams.redisLeaderCount-1));do
+				    for f in $(seq 0 \(deployParams.redisReplicaCount));do 
+				      node_string="${node_string} redis-${l}-${f}:6379 "
+				    done
+				  done
 
-				/bin/sh ${cluster_init_script}
+				  echo "yes" | redis-cli --cluster create ${node_string} --cluster-replicas \(deployParams.redisReplicaCount)
+
+				  # Exit because we just setup the cluster and there is nothing else to do
+				  # in this run of the code.
+				  echo "Cluster initialized..."
+				  exit 0
+				fi
+
+				echo "Cluster already initialized..."
+				if [ "$(redis-cli -h redis-0-0 cluster info |grep cluster_state|tr -d '[:space:]'|cut -d: -f2)" == "fail" ]; then
+				  echo "Cluster in failed state exiting out"
+				  exit 1
+				fi
+
+				if [ "${total_server_count}" -eq "${known_nodes}" ] && [ "${leader_server_count}" -eq "{cluster_size}" ]; then
+					echo "Scale is set... exiting"
+					exit 0
+				fi
+
+				server_diff=$(expr ${total_server_count} - ${known_nodes})
+				if [ "${server_diff}" -lt "0" ]; then
+				  echo "this is a scale down event.. manual intervention required"
+				  exit 0
+				fi
+
+				offset=$(expr ${cluster_size} - 0)
+				for l in $(seq ${offset} $(expr ${leader_server_count} - 1)); do
+				   for f in $(seq 0 \(deployParams.redisReplicaCount)); do
+				     if [ "${f}" -ne "0" ];then
+					 	m_id=$(redis-cli -h redis-${l}-0 cluster nodes|grep myself|awk '{print $1}')
+					 	replication_flag="--cluster-slave --cluster-master-id ${m_id}"
+					 fi
+					 redis-cli --cluster add-node redis-${l}-${f}:6379 redis-0-0:6379 ${replication_flag}
+					 sleep 5
+					 replication_flag=
+				   done
+				done
+				# Let cluster quisce for a few seconds
+				sleep 5
+				redis-cli --cluster rebalance redis-0-0:6379 --cluster-use-empty-masters
+
 				"""
 			}
-			cmd: ["/bin/sh", "/acorn/create-cluster-init-script.sh"]
 		}
 	}
 }
 
-for i in list.Range(0, data.followerCount, 1) {
-	containers: {
-		"redis-follower-\(i)": {
-			files: {
-				"/etc/redis/6379.conf": "secret://redis-follower-config/template"
-			}
-			dirs: {
-				"/data": "volume://redis-follower-data-\(i)"
-			}
-		}
-	}
-	volumes: "redis-follower-data-\(i)": {}
-}
+// Add healthchecks and scripts for all Redis containers regardless of type
+containers: [Name= =~"redis"]: {
+	probes: [
+		{
+			type:                "readiness"
+			initialDelaySeconds: 5
+			periodSeconds:       5
+			timeoutSeconds:      2
+			successThreshold:    1
+			failureThreshold:    5
+			exec: command: ["/bin/sh", "/acorn/redis-ping-local-readiness.sh", "1"]
+		},
+		{
+			type:                "liveness"
+			initialDelaySeconds: 5
+			periodSeconds:       5
+			timeoutSeconds:      6
+			successThreshold:    1
+			failureThreshold:    5
+			exec: command: ["/bin/sh", "/acorn/redis-ping-local-liveness.sh", "5"]
+		},
+	]
 
-if data.followerCount != 0 {
-	let followerConfigTemplate = data.redisCommonConfig & data.redisFollowerConfig
-	data: redisFollowerConfig: {
-		masterauth:        "${secret://redis-auth/token}"
-		slaveof:           "redis 6379"
-		"slave-read-only": "yes"
+	files: {
+		"/acorn/redis-ping-local-readiness.sh": """
+			#!/bin/sh
+			res=$(timeout -s 3 ${1} /usr/local/bin/redis-cli -h localhost -p 6379 ping)
+			if ["$?" -eq "124"]; then 
+			  echo "Timed out"
+			  exit 1
+			fi
+			if ["$response" != "PONG"]; then
+			  echo "${response}"
+			  exit 1
+			fi
+			"""
+		"/acorn/redis-ping-local-liveness.sh": """
+			#!/bin/sh
+			res=$(timeout -s 3 ${1} /usr/local/bin/redis-cli -h localhost -p 6379 ping)
+			if ["$?" -eq "124"]; then 
+			  echo "Timed out"
+			  exit 1
+			fi
+			if ["$response" != "PONG"]; then
+			  echo "${response}"
+			  exit 1
+			fi
+			"""
 	}
-	secrets: "redis-follower-config": data: template: tabwriter.Write([ for i, v in followerConfigTemplate {"\(i) \(v)"}])
 }
