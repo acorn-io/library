@@ -3,11 +3,22 @@ import "encoding/yaml"
 containers: {
 	registry: {
 		image:   "registry:2.8.1"
+		scale:   params.deploy.replicas
 		publish: "5000:5000/http"
+		if params.deploy.enableMetrics {
+			ports: "5001:5001/http"
+		}
 		files: {
 			"/auth/htpasswd":                  "secret://generated-htpasswd/content?onchange=no-action"
 			"/etc/docker/registry/config.yml": "secret://registry-config/template?onchange=redeploy"
 		}
+		probes: [
+			{
+				type: "readiness"
+				http:
+					url: "http://localhost:5000"
+			},
+		]
 	}
 	if params.deploy.storageCache == "redis" {
 		redis: {
@@ -46,6 +57,9 @@ params: {
 		//This is the password to login and push items to the registry. Default is randomly generated and can be obtained from the secret"
 		htpasswdPassword: *"" | string
 
+		//Number of registry containers to run.
+		replicas: int | *1
+
 		//Provide the complete storage configuration blob in registry config format.
 		storageConfig: {}
 
@@ -73,10 +87,10 @@ secrets: {
 	}
 	"registry-config": {
 		type: "template"
-		data: { template: yaml.Marshal(config) }
+		data: {template: yaml.Marshal(config)}
 	}
 	"registry-http-secret": type: "token"
-	"user-secret-data": type: "opaque"
+	"user-secret-data": type:     "opaque"
 }
 
 // This is to work around the data scope
@@ -90,7 +104,7 @@ if len(data.storageDriver) == 0 {
 data: authConfig: params.deploy.authConfig
 if len(data.authConfig) == 0 {
 	data: authConfig: htpasswd: realm: "Registry Realm"
-	data: authConfig: htpasswd: path: "/auth/htpasswd"
+	data: authConfig: htpasswd: path:  "/auth/htpasswd"
 }
 
 data: registryConfig: {
@@ -98,7 +112,7 @@ data: registryConfig: {
 	log: fields: service:           "registry"
 	storage: cache: blobdescriptor: params.deploy.storageCache
 	storage: data.storageDriver
-	auth: data.authConfig
+	auth:    data.authConfig
 	http: {
 		addr:   ":5000"
 		secret: "${secret://registry-http-secret/token}"
@@ -112,7 +126,7 @@ data: registryConfig: {
 			interval:  "10s"
 			threshold: 3
 		}
-	} 
+	}
 } & params.deploy.extraRegistryConfig
 
 if params.deploy.storageCache == "redis" {
@@ -132,7 +146,7 @@ if params.deploy.storageCache == "redis" {
 if params.deploy.enableMetrics {
 	data: registryConfig: metricsConfig: {
 		debug: {
-			addr: "127.0.0.1:5001" 
+			addr: "0.0.0.0:5001"
 			prometheus: {
 				enabled: true
 				path:    "/metrics"
