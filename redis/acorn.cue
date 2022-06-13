@@ -133,7 +133,7 @@ if deployParams.redisLeaderCount > 1 {
 			data: {
 				template: """
 				#!/bin/sh
-				set -x
+
 				set -e
 
 				replica_count=\(deployParams.redisReplicaCount)
