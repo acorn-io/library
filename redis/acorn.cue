@@ -34,7 +34,7 @@ for l in list.Range(0, deployParams.redisLeaderCount, 1) {
 				if deployParams.redisLeaderCount > 1 {
 					ports: "16379:16379/tcp"
 				}
-				publish: "6379:6379/tcp"
+				expose: "6379:6379/tcp"
 				env: {
 					"REDISCLI_AUTH": "secret://redis-auth/token"
 				}

@@ -2,9 +2,9 @@ import "encoding/yaml"
 
 containers: {
 	registry: {
-		image:   "registry:2.8.1"
-		scale:   params.deploy.replicas
-		publish: "5000:5000/http"
+		image:  "registry:2.8.1"
+		scale:  params.deploy.replicas
+		expose: "5000:5000/http"
 		if params.deploy.enableMetrics {
 			ports: "5001:5001/http"
 		}
