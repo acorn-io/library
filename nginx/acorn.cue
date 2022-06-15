@@ -1,4 +1,4 @@
-params: deploy: {
+args: deploy: {
 	// Number of NGINX instances to run
 	replicas: int | *1
 
@@ -11,7 +11,7 @@ params: deploy: {
 
 containers: nginx: {
 	image:  "nginx"
-	scale:  params.deploy.replicas
+	scale:  args.deploy.replicas
 	expose: "80:80/http"
 
 	files: {
@@ -22,7 +22,7 @@ containers: nginx: {
 		"/etc/nginx/conf.d": "secret://nginx-server-blocks"
 	}
 
-	if params.deploy.gitRepo != "" {
+	if args.deploy.gitRepo != "" {
 		sidecars: {
 			git: {
 				image: "alpine/git:v2.34.2"
@@ -32,14 +32,14 @@ containers: nginx: {
 					"/acorn/ssh":    "secret://git-clone-ssh-keys"
 				}
 				files: {
-					"/acorn/init.sh": "\(data.git.initScript)"
+					"/acorn/init.sh": "\(localData.git.initScript)"
 				}
 				entrypoint: "/bin/sh /acorn/init.sh"
 				command: [
 					"clone",
-					"\(params.deploy.gitRepo)",
-					if params.deploy.gitBranch != "" {
-						"-b \(params.deploy.gitBranch)"
+					"\(args.deploy.gitRepo)",
+					if args.deploy.gitBranch != "" {
+						"-b \(args.deploy.gitBranch)"
 					},
 					"/var/www/html/",
 				]
@@ -52,7 +52,7 @@ containers: nginx: {
 	}
 }
 
-if params.deploy.gitRepo != "" {
+if args.deploy.gitRepo != "" {
 	volumes: {
 		"site-data": {}
 	}
@@ -106,7 +106,7 @@ secrets: {
 					    server_name  localhost;
 
 					    location / {
-					        root   \(dataServerBlocks.htmlDir);
+					        root   \(localData.serverBlocks.htmlDir);
 					        index  index.html index.htm;
 					    }
 
@@ -114,7 +114,7 @@ secrets: {
 					    #
 					    error_page   500 502 503 504  /50x.html;
 					    location = /50x.html {
-					        root   \(dataServerBlocks.htmlDir);
+					        root   \(localData.serverBlocks.htmlDir);
 					    }
 				}
 				"""
@@ -123,16 +123,15 @@ secrets: {
 	"git-clone-ssh-keys": type: "opaque"
 }
 
-let dataServerBlocks = data.serverBlocks
-data: {
+localData: {
 	serverBlocks: {
 		gitHtmlDir:    "/var/www/html"
 		staticHtmlDir: "/usr/share/nginx/html"
-		if params.deploy.gitRepo == "" {
-			htmlDir: dataServerBlocks.staticHtmlDir
+		if args.deploy.gitRepo == "" {
+			htmlDir: localData.serverBlocks.staticHtmlDir
 		}
-		if params.deploy.gitRepo != "" {
-			htmlDir: dataServerBlocks.gitHtmlDir
+		if args.deploy.gitRepo != "" {
+			htmlDir: localData.serverBlocks.gitHtmlDir
 		}
 	}
 	git: {
@@ -142,8 +141,8 @@ data: {
 		#!/bin/sh
 		set -x
 		set -e
-		ssh_dir="/\(data.git.user)/.ssh/"
-		export GIT_SSH_COMMAND="\(data.git.sshCommand)"
+		ssh_dir="/\(localData.git.user)/.ssh/"
+		export GIT_SSH_COMMAND="\(localData.git.sshCommand)"
 
 		/bin/mkdir -p ${ssh_dir}
 		/bin/chmod 700 ${ssh_dir}
