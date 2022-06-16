@@ -3,9 +3,9 @@ import "encoding/yaml"
 containers: {
 	registry: {
 		image:  "registry:2.8.1"
-		scale:  params.deploy.replicas
+		scale:  args.deploy.replicas
 		expose: "5000:5000/http"
-		if params.deploy.enableMetrics {
+		if args.deploy.enableMetrics {
 			ports: "5001:5001/http"
 		}
 		files: {
@@ -20,7 +20,7 @@ containers: {
 			},
 		]
 	}
-	if params.deploy.storageCache == "redis" {
+	if args.deploy.storageCache == "redis" {
 		redis: {
 			image: "redis"
 			ports: {
@@ -43,7 +43,7 @@ jobs: {
 	}
 }
 
-params: {
+args: {
 	deploy: {
 		//Cache backend for blobdescriptor default 'inmemory' you can also use redis
 		storageCache: *"inmemory" | "redis"
@@ -75,8 +75,8 @@ secrets: {
 	"registry-user-creds": {
 		type: "basic"
 		data: {
-			username: "\(params.deploy.htpasswdUsername)"
-			password: "\(params.deploy.htpasswdPassword)"
+			username: "\(args.deploy.htpasswdUsername)"
+			password: "\(args.deploy.htpasswdPassword)"
 		}
 	}
 	"generated-htpasswd": {
@@ -87,32 +87,29 @@ secrets: {
 	}
 	"registry-config": {
 		type: "template"
-		data: {template: yaml.Marshal(config)}
+		data: {template: yaml.Marshal(localData.registryConfig)}
 	}
 	"registry-http-secret": type: "token"
 	"user-secret-data": type:     "opaque"
 }
 
-// This is to work around the data scope
-let config = data.registryConfig
-
-data: storageDriver: params.deploy.storageConfig
-if len(data.storageDriver) == 0 {
-	data: storageDriver: filesystem: rootdirectory: "/var/lib/registry"
+localData: storageDriver: args.deploy.storageConfig
+if len(localData.storageDriver) == 0 {
+	localData: storageDriver: filesystem: rootdirectory: "/var/lib/registry"
 }
 
-data: authConfig: params.deploy.authConfig
-if len(data.authConfig) == 0 {
-	data: authConfig: htpasswd: realm: "Registry Realm"
-	data: authConfig: htpasswd: path:  "/auth/htpasswd"
+localData: authConfig: args.deploy.authConfig
+if len(localData.authConfig) == 0 {
+	localData: authConfig: htpasswd: realm: "Registry Realm"
+	localData: authConfig: htpasswd: path:  "/auth/htpasswd"
 }
 
-data: registryConfig: {
+localData: registryConfig: {
 	version: "0.1"
 	log: fields: service:           "registry"
-	storage: cache: blobdescriptor: params.deploy.storageCache
-	storage: data.storageDriver
-	auth:    data.authConfig
+	storage: cache: blobdescriptor: args.deploy.storageCache
+	storage: localData.storageDriver
+	auth:    localData.authConfig
 	http: {
 		addr:   ":5000"
 		secret: "${secret://registry-http-secret/token}"
@@ -127,10 +124,10 @@ data: registryConfig: {
 			threshold: 3
 		}
 	}
-} & params.deploy.extraRegistryConfig
+} & args.deploy.extraRegistryConfig
 
-if params.deploy.storageCache == "redis" {
-	data: registryConfig: redis: {
+if args.deploy.storageCache == "redis" {
+	localData: registryConfig: redis: {
 		addr:         "redis:6379"
 		db:           0
 		dialtimeout:  "10ms"
@@ -143,8 +140,8 @@ if params.deploy.storageCache == "redis" {
 		}
 	}
 }
-if params.deploy.enableMetrics {
-	data: registryConfig: metricsConfig: {
+if args.deploy.enableMetrics {
+	localData: registryConfig: metricsConfig: {
 		debug: {
 			addr: "0.0.0.0:5001"
 			prometheus: {
