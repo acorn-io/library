@@ -11,20 +11,26 @@ args: deploy: {
 	// Specify the name of the database to create
 	dbName: string | *"acorn"
 
-	// Galera cluster name
+	// Galera: cluster name
 	clusterName: string | *"galera"
 
-	// Number of nodes to run in the galera cluster
+	// Number of nodes to run in the galera cluster. Default (3)
 	replicas: int | *3
 
-	// Put the cluster into recovery mode.
+	// Galera: run cluster into recovery mode.
 	recovery: bool | *false
 
-	// Server to have boot strap a new cluster
-	bootStrapIndex: int | *2
+	// Galera: set server to boot strap a new cluster
+	bootStrapIndex: int | *0
 
-	// When recovering the cluster this will force safe_to_bootstrap in grastate.dat for the bootStrapIndex node.
+	// Galera: When recovering the cluster this will force safe_to_bootstrap in grastate.dat for the bootStrapIndex node.
 	forceRecover: bool | *false
+
+	// User provided MariaDB config
+	customMariadbConfig: {...} | *{}
+
+	// Expose nodes 'direct' or via 'lb'(default)
+	expose: *"lb" | "direct"
 }
 
 for i in list.Range(0, args.deploy.replicas, 1) {
@@ -36,6 +42,9 @@ for i in list.Range(0, args.deploy.replicas, 1) {
 				"4568:4568",
 				"4444:4444",
 			]
+			if args.deploy.expose == "lb" {
+				alias: "mariadb"
+			}
 			expose: "3306:3306"
 			env: {
 				"MARIADB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
@@ -201,40 +210,39 @@ localData: {
 			socket: "/run/mysqld/mysqld.sock"
 		}
 		mysqld: {
-			port:                           3306
-			socket:                         "/run/mysqld/mysqld.sock"
-			bind_address:                   "0.0.0.0"
-			default_storage_engine:         "InnoDB"
-			collation_server:               "utf8_unicode_ci"
-			init_connect:                   "'SET NAMES utf8'"
-			character_set_server:           "utf8"
-			key_buffer_size:                "32M"
-			myisam_recover_options:         "FORCE,BACKUP"
-			max_allowed_packet:             "16M"
-			max_connect_errors:             1000000
-			log_bin:                        "mysql-bin"
-			expire_logs_days:               14
-			sync_binlog:                    0
-			tmp_table_size:                 "32M"
-			max_heap_table_size:            "32M"
-			query_cache_type:               1
-			query_cache_limit:              "4M"
-			query_cache_size:               "256M"
-			max_connections:                500
-			thread_cache_size:              50
-			open_files_limit:               65535
-			table_definition_cache:         4096
-			table_open_cache:               4096
-			innodb:                         "FORCE"
-			innodb_strict_mode:             1
-			innodb_doublewrite:             1
-			innodb_flush_method:            "O_DIRECT"
-			innodb_log_file_size:           "128M"
-			innodb_flush_log_at_trx_commit: 1
-			innodb_file_per_table:          1
-			innodb_buffer_pool_size:        "2G"
-			slow_query_log:                 1
-			log_queries_not_using_indexes:  1
+			port:                          3306
+			socket:                        "/run/mysqld/mysqld.sock"
+			bind_address:                  "0.0.0.0"
+			default_storage_engine:        string | *"InnoDB"
+			collation_server:              string | *"utf8_unicode_ci"
+			init_connect:                  string | *"'SET NAMES utf8'"
+			character_set_server:          string | *"utf8"
+			key_buffer_size:               string | *"32M"
+			myisam_recover_options:        string | *"FORCE,BACKUP"
+			max_allowed_packet:            string | *"16M"
+			max_connect_errors:            1000000
+			log_bin:                       string | *"mysql-bin"
+			expire_logs_days:              int | *14
+			sync_binlog:                   int | *0
+			tmp_table_size:                string | *"32M"
+			max_heap_table_size:           string | *"32M"
+			query_cache_type:              int | *1
+			query_cache_limit:             string | *"4M"
+			query_cache_size:              string | *"256M"
+			max_connections:               int | *500
+			thread_cache_size:             int | *50
+			open_files_limit:              int | *65535
+			table_definition_cache:        int | *4096
+			table_open_cache:              int | *4096
+			innodb:                        string | *"FORCE"
+			innodb_strict_mode:            int | *1
+			innodb_doublewrite:            int | *1
+			innodb_flush_method:           string | *"O_DIRECT"
+			innodb_log_file_size:          string | *"128M"
+			innodb_file_per_table:         int | *1
+			innodb_buffer_pool_size:       string | *"2G"
+			slow_query_log:                int | *1
+			log_queries_not_using_indexes: int | *1
 		}
 		galera: {
 			wsrep_on:                       "ON"
@@ -250,5 +258,5 @@ localData: {
 			innodb_autoinc_lock_mode:       2
 			wsrep_replicate_myisam:         "ON"
 		}
-	}
+	} & args.deploy.customMariadbConfig
 }
