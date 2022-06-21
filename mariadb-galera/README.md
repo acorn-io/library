@@ -18,7 +18,7 @@ You can get the username and root password if needed from the generated secrets.
 
 ## To Dos
 
- 1. Add backups / restore.
+ 1. Add restore.
 
 ## Available options
 
@@ -108,6 +108,18 @@ pvc-88f43b37-f201-4478-8e6f-0ed875f2c791   dry-sea    mysql-data-0   10G        
 pvc-f457051e-19a4-4d85-8ca0-046b60df060b
 pvc-d5b3bad7-f1de-4eba-ab0d-d671bf4ff84e
 ```
+
+### Backups
+
+If you would like to back up your database, you can launch with or update the app with a `--backup-schedule`. The backup schedule is in cron format.
+
+Here is an example of how you could do daily backups:
+`acorn run [MARIADB_ACORN_IMAGE] --backup-schedule "0 0 * * *"`
+
+If you would like to add backups to an already running cluster, you can do:
+`acorn update [APP-NAME] --backup-schedule "0 0 * * *"`
+
+Backups are run from pod that will mount both the data volume from the `mariadb-0` replica and a separate backup volume. The job uses `mariabackup` to perform the backup of the database cluster.
 
 ## Advanced Usage
 

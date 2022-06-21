@@ -31,6 +31,9 @@ args: deploy: {
 
 	// Expose nodes 'direct' or via 'lb'(default)
 	expose: *"lb" | "direct"
+
+	// Backup Schedule
+	backupSchedule: string | *""
 }
 
 for i in list.Range(0, args.deploy.replicas, 1) {
@@ -151,6 +154,46 @@ for i in list.Range(0, args.deploy.replicas, 1) {
 	volumes: {
 		"mysql-data-\(i)": {}
 	}
+}
+
+if args.deploy.backupSchedule != "" {
+	jobs: {
+		"backup": {
+			image: "mariadb:10.6.8-focal"
+			entrypoint: ["/acorn/scripts/backup.sh"]
+			dirs: {
+				"/var/lib/mysql": "volume://mysql-data-0"
+				"/backups":       "volume://mysql-backup-vol"
+			}
+			env: {
+				"MARIADB_BACKUP_USER":     "secret://backup-user-credentials/username"
+				"MARIADB_BACKUP_PASSWORD": "secret://backup-user-credentials/password"
+			}
+			schedule: args.deploy.backupSchedule
+			files: {
+				"/acorn/scripts/backup.sh": """
+					#!/bin/bash
+
+					backup_dir='/backups/'
+
+					ts=`date +"%Y%m%d-%H%M%S"`
+					this_backup_dir="${backup_dir}/galera-mariabackup-${ts}/"
+
+
+
+					mkdir -p ${this_backup_dir}
+
+					/usr/bin/mariabackup --backup --target-dir=${this_backup_dir} \\
+						--user=${MARIADB_BACKUP_USER} --password=${MARIADB_BACKUP_PASSWORD} \\
+						--host=mariadb-0
+					"""
+			}
+		}
+	}
+}
+
+volumes: {
+	"mysql-backup-vol": {}
 }
 
 secrets: {
