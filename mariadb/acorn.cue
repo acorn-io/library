@@ -29,9 +29,6 @@ args: deploy: {
 	// User provided MariaDB config
 	customMariadbConfig: {...} | *{}
 
-	// Expose nodes 'direct' or via 'lb'(default)
-	expose: *"lb" | "direct"
-
 	// Backup Schedule
 	backupSchedule: string | *""
 }
@@ -45,9 +42,7 @@ for i in list.Range(0, args.deploy.replicas, 1) {
 				"4568:4568",
 				"4444:4444",
 			]
-			if args.deploy.expose == "lb" {
-				alias: "mariadb"
-			}
+			alias:  "mariadb"
 			expose: "3306:3306"
 			env: {
 				"MARIADB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
