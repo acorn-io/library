@@ -3,10 +3,10 @@
 ## Getting Started
 
 1. Install Rancher Desktop on your development machine. (Other clusters should work, but we have tested this)
-1. Download the latest binaries for your OS from the [acorn readme](https://github.com/acorn-io/acorn#quick-start).
-1. You can follow the acorn [quickstart](https://docs.acorn.io/quickstart) to get up and running.
+1. Download the latest binaries for your OS from the links at the top of [acorn readme](https://github.com/acorn-io/acorn#quick-start).
+1. Review the [quickstart](https://docs.acorn.io/quickstart) to get up and running.
 1. Review the [10k foot view](https://docs.acorn.io/Architecture/ten-thousand-foot-view) architecture.
-1. You can look at [certificate](https://docs.acorn.io/Concepts/certificates) management if you need TLS.
+1. If the app needs TLS review the [certificate](https://docs.acorn.io/Concepts/certificates) docs.
 1. Review some initial [acorns](https://github.com/acorn-io/acorn-library).
 
 ## Structure of a new acorn
