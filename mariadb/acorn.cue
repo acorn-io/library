@@ -8,22 +8,22 @@ args: deploy: {
 	// Specify the username of db user
 	dbUserName: string | *""
 
-	// Specify the name of the database to create
+	// Specify the name of the database to create. Default(acorn)
 	dbName: string | *"acorn"
 
 	// Galera: cluster name
 	clusterName: string | *"galera"
 
-	// Number of nodes to run in the galera cluster. Default (3)
-	replicas: int | *3
+	// Number of nodes to run in the galera cluster. Default (1)
+	replicas: int | *1
 
-	// Galera: run cluster into recovery mode.
+	// Run cluster into recovery mode.
 	recovery: bool | *false
 
-	// Galera: set server to boot strap a new cluster
+	// Set server to boot strap a new cluster. Default (0)
 	bootStrapIndex: int | *0
 
-	// Galera: When recovering the cluster this will force safe_to_bootstrap in grastate.dat for the bootStrapIndex node.
+	// When recovering the cluster this will force safe_to_bootstrap in grastate.dat for the bootStrapIndex node.
 	forceRecover: bool | *false
 
 	// User provided MariaDB config
@@ -31,6 +31,9 @@ args: deploy: {
 
 	// Backup Schedule
 	backupSchedule: string | *""
+
+	// Restore from Backup. Takes a backup file name
+	restoreFromBackup: string | *""
 }
 
 for i in list.Range(0, args.deploy.replicas, 1) {
@@ -146,9 +149,16 @@ for i in list.Range(0, args.deploy.replicas, 1) {
 		}
 	}
 
-	volumes: {
-		"mysql-data-\(i)": {}
+	if i != 0 {
+		volumes: {
+			"mysql-data-\(i)": {}
+		}
 	}
+}
+
+// This is a special volume, and should always be defined.
+volumes: {
+	"mysql-data-0": {}
 }
 
 if args.deploy.backupSchedule != "" {
@@ -157,7 +167,7 @@ if args.deploy.backupSchedule != "" {
 			image: "mariadb:10.6.8-focal"
 			entrypoint: ["/acorn/scripts/backup.sh"]
 			dirs: {
-				"/var/lib/mysql": "volume://mysql-data-0"
+				"/var/lib/mysql": "volume://mysql-data-\(localData.backupReplica)"
 				"/backups":       "volume://mysql-backup-vol"
 			}
 			env: {
@@ -166,25 +176,106 @@ if args.deploy.backupSchedule != "" {
 			}
 			schedule: args.deploy.backupSchedule
 			files: {
-				"/acorn/scripts/backup.sh": """
-					#!/bin/bash
-
-					backup_dir='/backups/'
-
-					ts=`date +"%Y%m%d-%H%M%S"`
-					this_backup_dir="${backup_dir}/galera-mariabackup-${ts}/"
-
-
-
-					mkdir -p ${this_backup_dir}
-
-					/usr/bin/mariabackup --backup --target-dir=${this_backup_dir} \\
-						--user=${MARIADB_BACKUP_USER} --password=${MARIADB_BACKUP_PASSWORD} \\
-						--host=mariadb-0
-					"""
+				"/acorn/scripts/backup.sh": "secret://backup-script/template"
 			}
 		}
 	}
+	secrets: {
+		"backup-list": {
+			type: "generated"
+			params: {
+				job: "backup"
+			}
+		}
+		"backup-script": {
+			type: "template"
+			data: {
+				template: """
+				#!/bin/bash
+
+				set -e
+
+				backup_root_dir='/backups'
+				ts=`date +"%Y%m%d-%H%M%S"`
+				backup_dir_name="mariadb-backup-${ts}"
+				this_backup_dir="${backup_root_dir}/${backup_dir_name}"
+
+				if [ -f "${backup_root_dir}/restore_in_progress" ]; then
+				   echo "Restore in progress... exiting"
+				   exit 0
+				fi
+
+				mkdir -p ${this_backup_dir}
+
+				/usr/bin/mariabackup --backup --target-dir=${this_backup_dir} \\
+					--user=${MARIADB_BACKUP_USER} --password=${MARIADB_BACKUP_PASSWORD} \\
+					--host=mariadb-\(localData.backupReplica)
+					
+				cd ${backup_root_dir}
+				tar -zcvf ${backup_dir_name}.tgz ${this_backup_dir} && rm -rf ${this_backup_dir}
+
+				ls -lrt ${backup_root_dir}/ > /run/secrets/output
+				"""
+			}
+		}
+	}
+}
+
+if args.deploy.restoreFromBackup != "" {
+	jobs: {
+		"restore-from-backup": {
+			image: "mariadb:10.6.8-focal"
+			dirs: {
+				"/var/lib/mysql": "volume://mysql-data-\(localData.backupReplica)"
+				"/backups":       "volume://mysql-backup-vol"
+				"/scratch":       "volume://restore-scratch"
+			}
+			env: {
+				"MARIADB_BACKUP_USER":     "secret://backup-user-credentials/username"
+				"MARIADB_BACKUP_PASSWORD": "secret://backup-user-credentials/password"
+			}
+			files: {
+				"/acorn/scripts/restore.sh": """
+					#!/bin/bash
+
+					set -e
+					set -x
+
+					backup_root_dir='/backups'
+					touch ${backup_root_dir}/restore_in_progress
+					backup_to_restore="${backup_root_dir}/${1}"
+					backup_dir_name="${1%.*}"
+
+					if [ ! -f "${backup_to_restore}" ]; then
+						echo "Backup file ${backup_to_restore} not found!"
+						exit 1
+					fi
+
+					echo "Untaring backup... ${backup_to_restore}"
+					tar -zxvf "${backup_to_restore}" -C /scratch/
+
+					echo "Preparing backup..."
+					mariabackup --prepare --target-dir=/scratch/backups/${backup_dir_name}/
+
+					echo "Cleaning out old data dir"
+					rm -rf /var/lib/mysql/*
+
+					echo "Restoring..."
+					mariabackup --copy-back --target-dir=/scratch/backups/${backup_dir_name}/
+
+					echo "Cleaning up scratch..."
+					rm -rf /scratch/*
+
+					echo "removing restore lock"
+					rm ${backup_root_dir}/restore_in_progress
+
+					echo "remove backup arg and scale to 1"
+					"""
+			}
+			entrypoint: ["/acorn/scripts/restore.sh", "\(args.deploy.restoreFromBackup)"]
+		}
+	}
+	volumes: "restore-scratch": {}
 }
 
 volumes: {
@@ -223,25 +314,45 @@ secrets: {
 			GRANT RELOAD, PROCESS, LOCK TABLES, BINLOG MONITOR ON *.* TO '${secret://backup-user-credentials/username}'@'%';
 			"""
 	}
+	"user-provided-data": {
+		type: "opaque"
+	}
 }
 
 // Write configuration blocks
-for section, configBlock in localData.mariadbConfig {
-	secrets: {
-		"\(section)-config": {
-			type: "template"
-			data: template: "[\(section)]\n" +
-				tabwriter.Write([ for parameter, value in configBlock {"\(parameter)=\(value)"}])
-		}
-	}
-	containers: [Name= =~"mariadb"]: {
-		files: {
-			"/etc/mysql/mariadb.conf.d/\(section).cnf": "secret://\(section)-config/template?onchange=no-action"
+let mConfig = localData.mariadbConfig
+for replica in list.Range(0, args.deploy.replicas, 1) {
+	for section, configBlock in mConfig {
+		if section != "replicas" {
+			secrets: {
+				"mariadb-\(replica)-\(section)-config": {
+					type: "template"
+					if !(mConfig.replicas["mariadb-\(replica)"]["\(section)"] != _|_) {
+						data: template: "[\(section)]\n" +
+							tabwriter.Write([ for parameter, value in configBlock {"\(parameter)=\(value)"}])
+					}
+					if mConfig.replicas["mariadb-\(replica)"]["\(section)"] != _|_ {
+						data: template: "[\(section)]\n" +
+							tabwriter.Write([ for parameter, value in configBlock & mConfig.replicas["mariadb-\(replica)"]["\(section)"] {"\(parameter)=\(value)"}])
+					}
+				}
+			}
+			containers: [Name= =~"mariadb-\(replica)"]: {
+				files: {
+					"/etc/mysql/mariadb.conf.d/\(section).cnf": "secret://mariadb-\(replica)-\(section)-config/template?onchange=no-action"
+				}
+			}
 		}
 	}
 }
 
 localData: {
+	if args.deploy.replicas == 0 {
+		backupReplica: 0
+	}
+	if args.deploy.replicas > 0 {
+		backupReplica: args.deploy.replicas - 1
+	}
 	mariadbConfig: {
 		client: {
 			port:   3306
@@ -296,5 +407,6 @@ localData: {
 			innodb_autoinc_lock_mode:       2
 			wsrep_replicate_myisam:         "ON"
 		}
+		replicas: {}
 	} & args.deploy.customMariadbConfig
 }

@@ -16,38 +16,72 @@ This will create a three node cluster with a default database acorn.
 
 You can get the username and root password if needed from the generated secrets.
 
-## To Dos
+## Production considerations
 
- 1. Add restore.
+By default this will start a single instance of MariaDB with 1 replica on a 10GB volume from the default storage class. In a production setting you will want to customize this, along with the size and storage class of the backup volumes.
+
+#### TODOs
+
+Document how to mount volumes and custom types.
+
+* Add a way to reset root password
+* Add a way to pass in custom backup scripts
+* Add clean up of older backups.. also limit the number kept.
 
 ## Available options
 
 ```shell
-Volumes:   mysql-data-0, mysql-data-1, mysql-data-2
-Secrets:   root-credentials, db-user-credentials, backup-user-credentials, create-backup-user, client-config, mysqld-config, galera-config
-Container: mariadb-0, mariadb-1, mariadb-2
-Ports:     mariadb-0:3306/tcp, mariadb-1:3306/tcp, mariadb-2:3306/tcp
+Volumes:   mysql-backup-vol, mysql-data-0
+Secrets:   root-credentials, db-user-credentials, backup-user-credentials, create-backup-user, mariadb-0-client-config, mariadb-0-mysqld-config, mariadb-0-galera-config
+Container: mariadb-0
+Ports:     mariadb-0:3306/tcp
 
-      --boot-strap-index int           Galera: set server to boot strap a new cluster
+      --backup-schedule string         Backup Schedule
+      --boot-strap-index int           Galera: set server to boot strap a new cluster. Default(0)
       --cluster-name string            Galera: cluster name
       --custom-mariadb-config string   User provided MariaDB config
-      --db-name string                 Specify the name of the database to create
+      --db-name string                 Specify the name of the database to create. Default(acorn)
       --db-user-name string            Specify the username of db user
-      --expose string                  Expose nodes 'direct' or via 'lb'(default)
       --force-recover                  Galera: When recovering the cluster this will force safe_to_bootstrap in grastate.dat for the bootStrapIndex node.
       --recovery                       Galera: run cluster into recovery mode.
-      --replicas int                   Number of nodes to run in the galera cluster. Default (3)
+      --replicas int                   Number of nodes to run in the galera cluster. Default (1)
 ```
 
 ## Basics
 
-### Accessing the cluster
+### Accessing mariadb
 
-By default the Acorn exposes the cluster via the mariadb alias. When the Acorn comes up there will be an internal service mariadb that your applications can access. If that service is exposed, it will front all replicas with a load balancer.
+By default the Acorn creates a single replica which can be accessed via the `mariadb-0` service.
 
-There is also a `direct` mode. When launched with this setting each node will be exposed individually by it's name-index, like `mariadb-0, mariadb-1, etc...`.
+If you are going to run in an active-active state with multiple r/w replicas you will want to expose the `mariadb` service and access that through a load balancer.
 
 ### Adding replicas
+
+By default the MariaDB chart starts a single r/w replica. In production settings you would typically want more then one replica running. Users have two options with this chart. One method is to add additional passive followers to the primary server. When one of these passive replicas fail or experience an outage nothing happens to the running primary server. If the primary r/w replica fails then service will be down until it is restored.
+
+Alternatively, the Acorn can configure the replicas to run in an active-active state with multiple replicas able to perform r/w operations.
+
+#### Active-Passive replication
+
+If you would like to run active-passive then you will need to create a custom yaml file like so:
+
+config.yaml
+
+```yaml
+---
+replicas:
+  "mariadb-1":
+    galera:
+      wsrep_provider_options: "pc.weight=0"
+  ...
+```
+
+Then update your deployment:
+`acorn update [APP-NAME] --custom-mariadb-config @config.yaml --replicas 2`
+
+This will startup a second replica that can be used for backups, and read-only access.
+
+#### Active-Active replication
 
 Galera clusters have a quorem algorithm to prevent split brain scenarios. Ideally clusters run with an odd number of replicas.
 
@@ -111,6 +145,8 @@ pvc-d5b3bad7-f1de-4eba-ab0d-d671bf4ff84e
 
 ### Backups
 
+#### Enabling Backups
+
 If you would like to back up your database, you can launch with or update the app with a `--backup-schedule`. The backup schedule is in cron format.
 
 Here is an example of how you could do daily backups:
@@ -121,14 +157,44 @@ If you would like to add backups to an already running cluster, you can do:
 
 Backups are run from pod that will mount both the data volume from the `mariadb-0` replica and a separate backup volume. The job uses `mariabackup` to perform the backup of the database cluster.
 
+#### Listing available backups
+
+To see which backups are available, you can list them by exposing the content of the backup-list secret. First, find the secret name:
+
+```shell
+> acorn secrets
+NAME                            TYPE                        KEYS                  CREATED
+backup-list-d5bxh               Opaque                      [content]             19h ago
+backup-user-credentials-vlgk9   kubernetes.io/basic-auth    [password username]   20h ago
+create-backup-user-6zjkk        secrets.acorn.io/template   [template]            20h ago
+db-user-credentials-jcmpb       kubernetes.io/basic-auth    [password username]   20h ago
+mariadb-0-client-config-zsj27   secrets.acorn.io/template   [template]            20h ago
+mariadb-0-galera-config-vv64p   secrets.acorn.io/template   [template]            20h ago
+mariadb-0-mysqld-config-vb5nk   secrets.acorn.io/template   [template]            20h ago
+root-credentials-v55zt          kubernetes.io/basic-auth    [password username]   20h ago
+```
+
+Once you have the full name of the backup secret, list the contents:
+
+```shell
+> acorn secret expose backup-list-d5bxh
+-rw-r--r-- 1 root root 5296236 Jun 23 18:48 galera-mariadb-backup-20220623-184802.tgz
+...
+-rw-r--r-- 1 root root 5301593 Jun 23 20:20 galera-mariadb-backup-20220623-202002.tgz
+```
+
+#### Restoring from backup
+
+Only follow this procedure if you are certain you need to restore data. This procedure will cause ALL data to be LOST since the time of the backup.
+
+To restore from backup, first identify which backup you want to restore from in the list above.
+
+Update the app:
+`acorn update [APP-NAME] --restore-from-backup [BACKUP FILE NAME] --replicas 0`
+
+This will scale down the servers, and initiate a `restore-from-backup` job.
+
 ## Advanced Usage
-
-### Single node MariaDB node
-
-You can launch a stand alone non-galera cluster by running:
-`acorn run [MARIADB_GALERA_IMAGE] --replicas 1`
-
-This will create a single node instalation of the database server.
 
 ### Custom configuration
 
@@ -146,6 +212,17 @@ mysqld:
   max_connections: 1024
 ```
 
+You can set per-replica configurations if needed by placing the configurations under the `replica` top level key. Each node, specified in `mariadb-\(i)` where `i` is the replica number, can have custom configuration per config block.
+
+```yaml
+mysqld:
+  max_connections: 1024
+replicas:
+  mariadb-0:
+    mysqld:
+     max_connections: 512
+```
+
 Then run/update the app like so:
 
 `acorn run [MARIADB_GALERA_IMAGE] --custom-mariadb-confg @config.yaml`
@@ -154,9 +231,21 @@ This will get merged with the configuration defined in the Acorn. the defaul con
 
 Some of the configuration values can not be changed.
 
-## Galera
+### Active - Passive recovery from primary shutdown/failure
 
-### Recover from shutdown/quorem loss
+#### No data loss
+
+If the primary replica `mariadb-0` shutdown unexpectedly and the data is still present on the volume you can follow this procedure.
+
+`acorn update [APP-NAME] --recovery --force-bootstrap`
+
+Once you see in the logs that the server has come up once, you can move on to step 2. The node won't be ready to run yet until the next step.
+
+`acorn update [APP-NAME] --recovery=false --force-bootstrap=false`
+
+The clusters will come up as expected after this.
+
+### Active - Active recovery from shutdown/quorem loss
 
 When a cluster is completely shutdown, or has lost a majority of the nodes you need to follow a series of manual steps to recover.
 
