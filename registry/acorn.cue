@@ -130,9 +130,9 @@ if args.deploy.storageCache == "redis" {
 	localData: registryConfig: redis: {
 		addr:         "redis:6379"
 		db:           0
-		dialtimeout:  "10ms"
-		readtimeout:  "10ms"
-		writetimeout: "10ms"
+		dialtimeout:  string | *"10ms"
+		readtimeout:  string | *"10ms"
+		writetimeout: string | *"10ms"
 		pool: {
 			maxidle:     16
 			maxactive:   64
