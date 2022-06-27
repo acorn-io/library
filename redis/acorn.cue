@@ -97,8 +97,9 @@ secrets: {
 		type: "template"
 		data: template: tabwriter.Write([ for i, v in leaderConfigTemplate {"\(i) \(v)"}])
 	}
+
 	// Provides user a target to bind in secret data
-	"redis-user-data": type: "opaque"
+	"user-secret-data": type: "opaque"
 }
 
 if args.deploy.redisLeaderCount > 1 {

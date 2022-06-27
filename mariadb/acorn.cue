@@ -314,9 +314,9 @@ secrets: {
 			GRANT RELOAD, PROCESS, LOCK TABLES, BINLOG MONITOR ON *.* TO '${secret://backup-user-credentials/username}'@'%';
 			"""
 	}
-	"user-provided-data": {
-		type: "opaque"
-	}
+
+	// Provides user a target to bind in secret data
+	"user-secret-data": type: "opaque"
 }
 
 // Write configuration blocks

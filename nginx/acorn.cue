@@ -121,6 +121,9 @@ secrets: {
 		}
 	}
 	"git-clone-ssh-keys": type: "opaque"
+
+	// Provides user a target to bind in secret data
+	"user-secret-data": type: "opaque"
 }
 
 localData: {

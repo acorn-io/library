@@ -90,7 +90,9 @@ secrets: {
 		data: {template: yaml.Marshal(localData.registryConfig)}
 	}
 	"registry-http-secret": type: "token"
-	"user-secret-data": type:     "opaque"
+
+	// Provides user a target to bind in secret data
+	"user-secret-data": type: "opaque"
 }
 
 localData: storageDriver: args.deploy.storageConfig
@@ -134,9 +136,9 @@ if args.deploy.storageCache == "redis" {
 		readtimeout:  string | *"10ms"
 		writetimeout: string | *"10ms"
 		pool: {
-			maxidle:     16
-			maxactive:   64
-			idletimeout: "300s"
+			maxidle:     int | *16
+			maxactive:   int | *64
+			idletimeout: string | *"300s"
 		}
 	}
 }
