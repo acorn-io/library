@@ -5,44 +5,41 @@ import "list"
 // prevents collision when using in token secrets
 args: {
 	deploy: {
-		// Sets the requirepass value otherwise one is randomly generated
-		redisPassword: *"" | string
+		// Redis replicas per leader. Default (0).
+		replicas: int | *0
 
-		// Redis replicas per leader. To run in stand alone set to 0 
-		redisReplicaCount: int | *1
-
-		// Redis leader replica count. Setting this value 3 and above will configure Redis cluster.
-		redisLeaderCount: int | *1
+		// Redis leader count. Setting this value 3 and above will configure Redis cluster. Default(1)
+		leaders: int | *1
 
 		// User provided configuration for leader and cluster servers
-		redisLeaderConfig: {}
+		leaderConfig: {}
 
 		// User provided configuration for leader and cluster servers
-		redisFollowerConfig: {}
+		followerConfig: {}
 	}
 }
 
 // Leaders
-for l in list.Range(0, args.deploy.redisLeaderCount, 1) {
+for l in list.Range(0, args.deploy.leaders, 1) {
 	// Followers
-	for f in list.Range(0, args.deploy.redisReplicaCount+1, 1) {
+	for f in list.Range(0, args.deploy.replicas+1, 1) {
 		containers: {
 			"redis-\(l)-\(f)": {
 				image: "redis:7-alpine"
 				cmd: ["/etc/redis/6379.conf"]
-				if args.deploy.redisLeaderCount > 1 {
+				if args.deploy.leaders > 1 {
 					ports: "16379:16379/tcp"
 				}
 				expose: "6379:6379/tcp"
 				env: {
 					"REDISCLI_AUTH": "secret://redis-auth/token"
 				}
-				if args.deploy.redisLeaderCount > 1 || f == 0 {
+				if args.deploy.leaders > 1 || f == 0 {
 					files: {
 						"/etc/redis/6379.conf": "secret://redis-leader-config/template"
 					}
 				}
-				if args.deploy.redisLeaderCount == 1 && f > 0 {
+				if args.deploy.leaders == 1 && f > 0 {
 					files: {
 						"/etc/redis/6379.conf": "secret://redis-follower-config/template"
 					}
@@ -58,7 +55,7 @@ for l in list.Range(0, args.deploy.redisLeaderCount, 1) {
 	}
 }
 
-if args.deploy.redisReplicaCount != 0 {
+if args.deploy.replicas != 0 {
 	let followerConfigTemplate = localData.redis.commonConfig & localData.redis.followerConfig & args.deploy.redisFollowerConfig
 	localData: redis: followerConfig: {
 		slaveof:           "redis-0-0 6379"
@@ -84,7 +81,7 @@ localData: {
 		leaderConfig: "tcp-keepalive": int | *60
 		followerConfig: {...} | *{}
 	}
-	serverCount: args.deploy.redisLeaderCount + (args.deploy.redisLeaderCount * args.deploy.redisReplicaCount)
+	serverCount: args.deploy.leaders + (args.deploy.leaders * args.deploy.replicas)
 }
 
 secrets: {
@@ -102,7 +99,7 @@ secrets: {
 	"user-secret-data": type: "opaque"
 }
 
-if args.deploy.redisLeaderCount > 1 {
+if args.deploy.leaders > 1 {
 	localData: redis:
 		leaderConfig: {
 			"cluster-enabled":      "yes"
@@ -135,16 +132,16 @@ if args.deploy.redisLeaderCount > 1 {
 
 				set -e
 
-				replica_count=\(args.redisReplicaCount)
-				leader_server_count=\(args.redisLeaderCount)
+				replica_count=\(args.replicas)
+				leader_server_count=\(args.leaders)
 				total_server_count=\(localData.serverCount)
 
 
 				cluster_init_script=/acorn/redis-cluster-init.sh
 
 				# wait until services become available
-				for l in $(seq 0 \(args.redisLeaderCount-1)); do
-				  for f in $(seq 0 \(args.redisReplicaCount-1)); do
+				for l in $(seq 0 \(args.leaders-1)); do
+				  for f in $(seq 0 \(args.replicas-1)); do
 				    echo "checking redis-${l}-${f}"
 				  	until timeout -s 3 5 redis-cli -h redis-${l}-${f} -p 6379 ping; do echo "waiting...";sleep 5;done
 				  done
@@ -156,13 +153,13 @@ if args.deploy.redisLeaderCount > 1 {
 				  echo "initializing cluster..."
 				
 				  node_string=
-				  for l in $(seq 0 \(args.redisLeaderCount-1));do
-				    for f in $(seq 0 \(args.redisReplicaCount));do 
+				  for l in $(seq 0 \(args.leaders-1));do
+				    for f in $(seq 0 \(args.replicas));do 
 				      node_string="${node_string} redis-${l}-${f}:6379 "
 				    done
 				  done
 
-				  echo "yes" | redis-cli --cluster create ${node_string} --cluster-replicas \(args.redisReplicaCount)
+				  echo "yes" | redis-cli --cluster create ${node_string} --cluster-replicas \(args.replicas)
 
 				  # Exit because we just setup the cluster and there is nothing else to do
 				  # in this run of the code.
@@ -189,7 +186,7 @@ if args.deploy.redisLeaderCount > 1 {
 
 				offset=$(expr ${cluster_size} - 0)
 				for l in $(seq ${offset} $(expr ${leader_server_count} - 1)); do
-				   for f in $(seq 0 \(args.redisReplicaCount)); do
+				   for f in $(seq 0 \(args.replicas)); do
 				     if [ "${f}" -ne "0" ];then
 					 	m_id=$(redis-cli -h redis-${l}-0 cluster nodes|grep myself|awk '{print $1}')
 					 	replication_flag="--cluster-slave --cluster-master-id ${m_id}"
