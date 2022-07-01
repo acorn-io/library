@@ -1,4 +1,4 @@
-args: deploy: {
+args: {
 	// Number of NGINX instances to run
 	replicas: int | *1
 
@@ -11,7 +11,7 @@ args: deploy: {
 
 containers: nginx: {
 	image:  "nginx"
-	scale:  args.deploy.replicas
+	scale:  args.replicas
 	expose: "80:80/http"
 
 	files: {
@@ -22,7 +22,7 @@ containers: nginx: {
 		"/etc/nginx/conf.d": "secret://nginx-server-blocks"
 	}
 
-	if args.deploy.gitRepo != "" {
+	if args.gitRepo != "" {
 		sidecars: {
 			git: {
 				image: "alpine/git:v2.34.2"
@@ -37,9 +37,9 @@ containers: nginx: {
 				entrypoint: "/bin/sh /acorn/init.sh"
 				command: [
 					"clone",
-					"\(args.deploy.gitRepo)",
-					if args.deploy.gitBranch != "" {
-						"-b \(args.deploy.gitBranch)"
+					"\(args.gitRepo)",
+					if args.gitBranch != "" {
+						"-b \(args.gitBranch)"
 					},
 					"/var/www/html/",
 				]
@@ -52,7 +52,7 @@ containers: nginx: {
 	}
 }
 
-if args.deploy.gitRepo != "" {
+if args.gitRepo != "" {
 	volumes: {
 		"site-data": {}
 	}
@@ -130,10 +130,10 @@ localData: {
 	serverBlocks: {
 		gitHtmlDir:    "/var/www/html"
 		staticHtmlDir: "/usr/share/nginx/html"
-		if args.deploy.gitRepo == "" {
+		if args.gitRepo == "" {
 			htmlDir: localData.serverBlocks.staticHtmlDir
 		}
-		if args.deploy.gitRepo != "" {
+		if args.gitRepo != "" {
 			htmlDir: localData.serverBlocks.gitHtmlDir
 		}
 	}

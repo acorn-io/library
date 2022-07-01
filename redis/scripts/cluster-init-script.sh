@@ -8,7 +8,10 @@ total_server_count=${3}
 
 
 leader_server_count_idx=$(expr ${leader_server_count} - 1)
-replica_count_idx=$(expr ${replica_count} -1)
+replica_count_idx=0
+if [ "${replica_count}" -gt 0 ]; then
+  replica_count_idx=$(expr ${replica_count} - 1)
+fi
 
 cluster_init_script=/acorn/scripts/redis-cluster-init.sh
 
@@ -46,7 +49,7 @@ if [ "$(redis-cli -h redis-0-0 cluster info |grep cluster_state|tr -d '[:space:]
   exit 1
 fi
 
-if [ "${total_server_count}" -eq "${known_nodes}" ] && [ "${leader_server_count}" -eq "{cluster_size}" ]; then
+if [ "${total_server_count}" -eq "${known_nodes}" ] && [ "${leader_server_count}" -eq "${cluster_size}" ]; then
 	echo "Scale is set... exiting"
 	exit 0
 fi

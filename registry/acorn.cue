@@ -1,39 +1,34 @@
 import "encoding/yaml"
 
 args: {
-	deploy: {
-		//Cache backend for blobdescriptor default 'inmemory' you can also use redis
-		storageCache: *"inmemory" | "redis"
+	//Cache backend for blobdescriptor default 'inmemory' you can also use redis
+	storageCache: *"inmemory" | "redis"
 
-		//Enable metrics endpoint
-		enableMetrics: *true | false | bool
+	//Enable metrics endpoint
+	enableMetrics: *true | false | bool
 
-		//This is the username allowed to login and push items to the registry. Default is randomly generated and can be obtained from the secret"
-		htpasswdUsername: *"" | string
+	//This is the username allowed to login and push items to the registry. Default is randomly generated and can be obtained from the secret"
+	htpasswdUsername: *"" | string
 
-		//This is the password to login and push items to the registry. Default is randomly generated and can be obtained from the secret"
-		htpasswdPassword: *"" | string
+	//Number of registry containers to run.
+	scale: int | *1
 
-		//Number of registry containers to run.
-		scale: int | *1
+	//Provide the complete storage configuration blob in registry config format.
+	storageConfig: {}
 
-		//Provide the complete storage configuration blob in registry config format.
-		storageConfig: {}
+	//Provide the complete auth configuration blob in registry config format.
+	authConfig: {}
 
-		//Provide the complete auth configuration blob in registry config format.
-		authConfig: {}
-
-		//Provide additional configuration for the registry
-		extraRegistryConfig: {}
-	}
+	//Provide additional configuration for the registry
+	extraRegistryConfig: {}
 }
 
 containers: {
 	registry: {
 		image:  "registry:2.8.1"
-		scale:  args.deploy.scale
+		scale:  args.scale
 		expose: "5000:5000/http"
-		if args.deploy.enableMetrics {
+		if args.enableMetrics {
 			ports: "5001:5001/http"
 		}
 		files: {
@@ -58,7 +53,7 @@ jobs: {
 }
 
 acorns: {
-	if args.deploy.storageCache == "redis" {
+	if args.storageCache == "redis" {
 		redis: {
 			build: "../redis"
 			ports: {
@@ -72,8 +67,7 @@ secrets: {
 	"registry-user-creds": {
 		type: "basic"
 		data: {
-			username: "\(args.deploy.htpasswdUsername)"
-			password: "\(args.deploy.htpasswdPassword)"
+			username: "\(args.htpasswdUsername)"
 		}
 	}
 	"generated-htpasswd": {
@@ -93,12 +87,12 @@ secrets: {
 }
 
 localData: {
-	storageDriver: args.deploy.storageConfig
+	storageDriver: args.storageConfig
 	if len(storageDriver) == 0 {
 		storageDriver: filesystem: rootdirectory: "/var/lib/registry"
 	}
 
-	authConfig: args.deploy.authConfig
+	authConfig: args.authConfig
 	if len(authConfig) == 0 {
 		authConfig: htpasswd: {
 			realm: "Registry Realm"
@@ -106,10 +100,10 @@ localData: {
 		}
 	}
 
-	registryConfig: args.deploy.extraRegistryConfig & {
+	registryConfig: args.extraRegistryConfig & {
 		version: "0.1"
 		log: fields: service:           "registry"
-		storage: cache: blobdescriptor: args.deploy.storageCache
+		storage: cache: blobdescriptor: args.storageCache
 		storage: storageDriver
 		auth:    authConfig
 		http: {
@@ -128,7 +122,7 @@ localData: {
 		}
 	}
 
-	if args.deploy.storageCache == "redis" {
+	if args.storageCache == "redis" {
 		registryConfig: redis: {
 			password:     string | *"${secret://redis.redis-auth/token}"
 			addr:         "redis:6379"
@@ -144,7 +138,7 @@ localData: {
 		}
 	}
 
-	if args.deploy.enableMetrics {
+	if args.enableMetrics {
 		registryConfig: metricsConfig: debug: {
 			addr: "0.0.0.0:5001"
 			prometheus: {
