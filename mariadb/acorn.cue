@@ -156,7 +156,7 @@ for i in list.Range(0, args.deploy.replicas, 1) {
 	}
 }
 
-// This is a special volume, and should always be defined.
+// This is a special volume, and should always be defined. Needs to exist when scale is 0.
 volumes: {
 	"mysql-data-0": {}
 }
@@ -353,7 +353,7 @@ localData: {
 	if args.deploy.replicas > 0 {
 		backupReplica: args.deploy.replicas - 1
 	}
-	mariadbConfig: {
+	mariadbConfig: args.deploy.customMariadbConfig & {
 		client: {
 			port:   3306
 			socket: "/run/mysqld/mysqld.sock"
@@ -408,5 +408,5 @@ localData: {
 			wsrep_replicate_myisam:         "ON"
 		}
 		replicas: {}
-	} & args.deploy.customMariadbConfig
+	}
 }
