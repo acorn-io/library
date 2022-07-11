@@ -4,7 +4,7 @@ import "text/tabwriter"
 
 import "strings"
 
-args: deploy: {
+args: {
 	// Specify the username of db user
 	dbUserName: string | *""
 
@@ -36,7 +36,15 @@ args: deploy: {
 	restoreFromBackup: string | *""
 }
 
-for i in list.Range(0, args.deploy.replicas, 1) {
+profiles: {
+	build: {
+		backupSchedule:    "* * * * *"
+		restoreFromBackup: "not-a-real-backup"
+		recovery:          true
+	}
+}
+
+for i in list.Range(0, args.replicas, 1) {
 	containers: {
 		"mariadb-\(i)": {
 			image: "mariadb:10.6.8-focal"
@@ -51,7 +59,7 @@ for i in list.Range(0, args.deploy.replicas, 1) {
 				"MARIADB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
 				"MARIADB_USER":          "secret://db-user-credentials/username?onchange=no-action"
 				"MARIADB_PASSWORD":      "secret://db-user-credentials/password?onchange=no-action"
-				"MARIADB_DATABASE":      "\(args.deploy.dbName)"
+				"MARIADB_DATABASE":      "\(args.dbName)"
 				"MY_NAME":               "mariadb-\(i)"
 			}
 			dirs: {
@@ -60,9 +68,9 @@ for i in list.Range(0, args.deploy.replicas, 1) {
 			files: {
 				"/docker-entrypoint-initdb.d/create_backup_user.sql": "secret://create-backup-user/template?onchange=no-action"
 			}
-			if args.deploy.recovery {
+			if args.recovery {
 				command: ["--wsrep-recover"]
-				if args.deploy.forceRecover && args.deploy.bootStrapIndex == i {
+				if args.forceRecover && args.bootStrapIndex == i {
 					sidecars: {
 						"recovery-\(i)": {
 							image: "mariadb:10.6.8-focal"
@@ -87,12 +95,12 @@ for i in list.Range(0, args.deploy.replicas, 1) {
 				}
 			}
 
-			if !args.deploy.recovery && i == args.deploy.bootStrapIndex {
+			if !args.recovery && i == args.bootStrapIndex {
 				command: ["--wsrep-new-cluster"]
 			}
 
 			// Shut off health checks in a broken state to keep pods up longer
-			if !args.deploy.recovery {
+			if !args.recovery {
 				probes: [
 					{
 						type:                "liveness"
@@ -156,16 +164,16 @@ for i in list.Range(0, args.deploy.replicas, 1) {
 	}
 }
 
-// This is a special volume, and should always be defined.
+// This is a special volume, and should always be defined. Needs to exist when scale is 0.
 volumes: {
 	"mysql-data-0": {}
 }
 
-if args.deploy.backupSchedule != "" {
+if args.backupSchedule != "" {
 	jobs: {
 		"backup": {
 			image: "mariadb:10.6.8-focal"
-			entrypoint: ["/acorn/scripts/backup.sh"]
+			command: ["/acorn/scripts/backup.sh", "mariadb-\(localData.backupReplica)"]
 			dirs: {
 				"/var/lib/mysql": "volume://mysql-data-\(localData.backupReplica)"
 				"/backups":       "volume://mysql-backup-vol"
@@ -174,9 +182,9 @@ if args.deploy.backupSchedule != "" {
 				"MARIADB_BACKUP_USER":     "secret://backup-user-credentials/username"
 				"MARIADB_BACKUP_PASSWORD": "secret://backup-user-credentials/password"
 			}
-			schedule: args.deploy.backupSchedule
-			files: {
-				"/acorn/scripts/backup.sh": "secret://backup-script/template"
+			schedule: args.backupSchedule
+			dirs: {
+				"/acorn/scripts/": "./scripts"
 			}
 		}
 	}
@@ -187,92 +195,24 @@ if args.deploy.backupSchedule != "" {
 				job: "backup"
 			}
 		}
-		"backup-script": {
-			type: "template"
-			data: {
-				template: """
-				#!/bin/bash
-
-				set -e
-
-				backup_root_dir='/backups'
-				ts=`date +"%Y%m%d-%H%M%S"`
-				backup_dir_name="mariadb-backup-${ts}"
-				this_backup_dir="${backup_root_dir}/${backup_dir_name}"
-
-				if [ -f "${backup_root_dir}/restore_in_progress" ]; then
-				   echo "Restore in progress... exiting"
-				   exit 0
-				fi
-
-				mkdir -p ${this_backup_dir}
-
-				/usr/bin/mariabackup --backup --target-dir=${this_backup_dir} \\
-					--user=${MARIADB_BACKUP_USER} --password=${MARIADB_BACKUP_PASSWORD} \\
-					--host=mariadb-\(localData.backupReplica)
-					
-				cd ${backup_root_dir}
-				tar -zcvf ${backup_dir_name}.tgz ${this_backup_dir} && rm -rf ${this_backup_dir}
-
-				ls -lrt ${backup_root_dir}/ > /run/secrets/output
-				"""
-			}
-		}
 	}
 }
 
-if args.deploy.restoreFromBackup != "" {
+if args.restoreFromBackup != "" {
 	jobs: {
 		"restore-from-backup": {
 			image: "mariadb:10.6.8-focal"
 			dirs: {
-				"/var/lib/mysql": "volume://mysql-data-\(localData.backupReplica)"
-				"/backups":       "volume://mysql-backup-vol"
-				"/scratch":       "volume://restore-scratch"
+				"/var/lib/mysql":  "volume://mysql-data-\(localData.backupReplica)"
+				"/backups":        "volume://mysql-backup-vol"
+				"/scratch":        "volume://restore-scratch"
+				"/acorn/scripts/": "./scripts"
 			}
 			env: {
 				"MARIADB_BACKUP_USER":     "secret://backup-user-credentials/username"
 				"MARIADB_BACKUP_PASSWORD": "secret://backup-user-credentials/password"
 			}
-			files: {
-				"/acorn/scripts/restore.sh": """
-					#!/bin/bash
-
-					set -e
-					set -x
-
-					backup_root_dir='/backups'
-					touch ${backup_root_dir}/restore_in_progress
-					backup_to_restore="${backup_root_dir}/${1}"
-					backup_dir_name="${1%.*}"
-
-					if [ ! -f "${backup_to_restore}" ]; then
-						echo "Backup file ${backup_to_restore} not found!"
-						exit 1
-					fi
-
-					echo "Untaring backup... ${backup_to_restore}"
-					tar -zxvf "${backup_to_restore}" -C /scratch/
-
-					echo "Preparing backup..."
-					mariabackup --prepare --target-dir=/scratch/backups/${backup_dir_name}/
-
-					echo "Cleaning out old data dir"
-					rm -rf /var/lib/mysql/*
-
-					echo "Restoring..."
-					mariabackup --copy-back --target-dir=/scratch/backups/${backup_dir_name}/
-
-					echo "Cleaning up scratch..."
-					rm -rf /scratch/*
-
-					echo "removing restore lock"
-					rm ${backup_root_dir}/restore_in_progress
-
-					echo "remove backup arg and scale to 1"
-					"""
-			}
-			entrypoint: ["/acorn/scripts/restore.sh", "\(args.deploy.restoreFromBackup)"]
+			command: ["/acorn/scripts/restore.sh", "\(args.restoreFromBackup)"]
 		}
 	}
 	volumes: "restore-scratch": {}
@@ -294,7 +234,7 @@ secrets: {
 	"db-user-credentials": {
 		type: "basic"
 		data: {
-			username: "\(args.deploy.dbUserName)"
+			username: "\(args.dbUserName)"
 			password: ""
 		}
 	}
@@ -321,7 +261,7 @@ secrets: {
 
 // Write configuration blocks
 let mConfig = localData.mariadbConfig
-for replica in list.Range(0, args.deploy.replicas, 1) {
+for replica in list.Range(0, args.replicas, 1) {
 	for section, configBlock in mConfig {
 		if section != "replicas" {
 			secrets: {
@@ -347,13 +287,13 @@ for replica in list.Range(0, args.deploy.replicas, 1) {
 }
 
 localData: {
-	if args.deploy.replicas == 0 {
+	if args.replicas == 0 {
 		backupReplica: 0
 	}
-	if args.deploy.replicas > 0 {
-		backupReplica: args.deploy.replicas - 1
+	if args.replicas > 0 {
+		backupReplica: args.replicas - 1
 	}
-	mariadbConfig: {
+	mariadbConfig: args.customMariadbConfig & {
 		client: {
 			port:   3306
 			socket: "/run/mysqld/mysqld.sock"
@@ -396,8 +336,8 @@ localData: {
 		galera: {
 			wsrep_on:                       "ON"
 			wsrep_provider:                 "/usr/lib/libgalera_smm.so"
-			wsrep_cluster_name:             "\(args.deploy.clusterName)"
-			wsrep_cluster_address:          "gcomm://" + strings.Join([ for i in list.Range(0, args.deploy.replicas, 1) {"mariadb-\(i)"}], ",")
+			wsrep_cluster_name:             "\(args.clusterName)"
+			wsrep_cluster_address:          "gcomm://" + strings.Join([ for i in list.Range(0, args.replicas, 1) {"mariadb-\(i)"}], ",")
 			wsrep_sst_method:               "mariabackup"
 			wsrep_sst_auth:                 "${secret://backup-user-credentials/username}:${secret://backup-user-credentials/password}"
 			binlog_format:                  "row"
@@ -408,5 +348,5 @@ localData: {
 			wsrep_replicate_myisam:         "ON"
 		}
 		replicas: {}
-	} & args.deploy.customMariadbConfig
+	}
 }
