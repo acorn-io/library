@@ -1,14 +1,10 @@
-import "text/tabwriter"
-
-import "list"
-
 // prevents collision when using in token secrets
 args: {
 	// Redis replicas per leader. Default (0).
-	replicas: int | *0
+	replicas: 0
 
 	// Redis leader count. Setting this value 3 and above will configure Redis cluster. Default(1)
-	leaders: int | *1
+	leaders: 1
 
 	// User provided configuration for leader and cluster servers
 	leaderConfig: {}
@@ -18,9 +14,9 @@ args: {
 }
 
 // Leaders
-for l in list.Range(0, args.leaders, 1) {
+for l in std.range(args.leaders) {
 	// Followers
-	for f in list.Range(0, args.replicas+1, 1) {
+	for f in std.range(args.replicas + 1) {
 		containers: {
 			"redis-\(l)-\(f)": {
 				image: "redis:7-alpine"
@@ -80,12 +76,12 @@ secrets: {
 	}
 	"redis-leader-config": {
 		type: "template"
-		data: template: tabwriter.Write([ for i, v in leaderConfigTemplate {"\(i) \(v)"}])
+		data: template: std.join([ for i, v in leaderConfigTemplate {"\(i) \(v)"}], ",")
 	}
 	if args.replicas != 0 {
 		"redis-follower-config": {
 			type: "template"
-			data: template: tabwriter.Write([ for i, v in followerConfigTemplate {"\(i) \(v)"}])
+			data: template: std.join([ for i, v in followerConfigTemplate {"\(i) \(v)"}], ",")
 		}
 	}
 

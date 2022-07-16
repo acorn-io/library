@@ -1,17 +1,15 @@
-import "encoding/yaml"
-
 args: {
 	//Cache backend for blobdescriptor default 'inmemory' you can also use redis
-	storageCache: *"inmemory" | "redis"
+	storageCache: "inmemory" | "redis"
 
 	//Enable metrics endpoint
-	enableMetrics: *true | false | bool
+	enableMetrics: true
 
 	//This is the username allowed to login and push items to the registry. Default is randomly generated and can be obtained from the secret"
-	htpasswdUsername: *"" | string
+	htpasswdUsername: ""
 
 	//Number of registry containers to run.
-	scale: int | *1
+	scale: 1
 
 	//Provide the complete storage configuration blob in registry config format.
 	storageConfig: {}
@@ -78,7 +76,7 @@ secrets: {
 	}
 	"registry-config": {
 		type: "template"
-		data: {template: yaml.Marshal(localData.registryConfig)}
+		data: {template: std.toYAML(localData.registryConfig)}
 	}
 	"registry-http-secret": type: "token"
 

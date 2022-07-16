@@ -1,39 +1,33 @@
-import "list"
-
-import "text/tabwriter"
-
-import "strings"
-
 args: {
 	// Specify the username of db user
-	dbUserName: string | *""
+	dbUserName: ""
 
 	// Specify the name of the database to create. Default(acorn)
-	dbName: string | *"acorn"
+	dbName: "acorn"
 
 	// Galera: cluster name
-	clusterName: string | *"galera"
+	clusterName: "galera"
 
 	// Number of nodes to run in the galera cluster. Default (1)
-	replicas: int | *1
+	replicas: 1
 
 	// Run cluster into recovery mode.
-	recovery: bool | *false
+	recovery: false
 
 	// Set server to boot strap a new cluster. Default (0)
-	bootStrapIndex: int | *0
+	bootStrapIndex: 0
 
 	// When recovering the cluster this will force safe_to_bootstrap in grastate.dat for the bootStrapIndex node.
-	forceRecover: bool | *false
+	forceRecover: false
 
 	// User provided MariaDB config
-	customMariadbConfig: {...} | *{}
+	customMariadbConfig: {}
 
 	// Backup Schedule
-	backupSchedule: string | *""
+	backupSchedule: ""
 
 	// Restore from Backup. Takes a backup file name
-	restoreFromBackup: string | *""
+	restoreFromBackup: ""
 }
 
 profiles: {
@@ -44,7 +38,7 @@ profiles: {
 	}
 }
 
-for i in list.Range(0, args.replicas, 1) {
+for i in std.range(args.replicas) {
 	containers: {
 		"mariadb-\(i)": {
 			image: "mariadb:10.6.8-focal"
@@ -261,7 +255,7 @@ secrets: {
 
 // Write configuration blocks
 let mConfig = localData.mariadbConfig
-for replica in list.Range(0, args.replicas, 1) {
+for replica in std.range(args.replicas) {
 	for section, configBlock in mConfig {
 		if section != "replicas" {
 			secrets: {
@@ -269,11 +263,11 @@ for replica in list.Range(0, args.replicas, 1) {
 					type: "template"
 					if !(mConfig.replicas["mariadb-\(replica)"]["\(section)"] != _|_) {
 						data: template: "[\(section)]\n" +
-							tabwriter.Write([ for parameter, value in configBlock {"\(parameter)=\(value)"}])
+							std.join([ for parameter, value in configBlock {"\(parameter)=\(value)"}], "\n")
 					}
 					if mConfig.replicas["mariadb-\(replica)"]["\(section)"] != _|_ {
 						data: template: "[\(section)]\n" +
-							tabwriter.Write([ for parameter, value in configBlock & mConfig.replicas["mariadb-\(replica)"]["\(section)"] {"\(parameter)=\(value)"}])
+							std.join([ for parameter, value in configBlock & mConfig.replicas["mariadb-\(replica)"]["\(section)"] {"\(parameter)=\(value)"}], "\n")
 					}
 				}
 			}
@@ -337,7 +331,7 @@ localData: {
 			wsrep_on:                       "ON"
 			wsrep_provider:                 "/usr/lib/libgalera_smm.so"
 			wsrep_cluster_name:             "\(args.clusterName)"
-			wsrep_cluster_address:          "gcomm://" + strings.Join([ for i in list.Range(0, args.replicas, 1) {"mariadb-\(i)"}], ",")
+			wsrep_cluster_address:          "gcomm://" + std.join([ for i in std.range(args.replicas) {"mariadb-\(i)"}], ",")
 			wsrep_sst_method:               "mariabackup"
 			wsrep_sst_auth:                 "${secret://backup-user-credentials/username}:${secret://backup-user-credentials/password}"
 			binlog_format:                  "row"
