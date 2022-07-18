@@ -1,12 +1,12 @@
 args: {
 	// Number of NGINX instances to run
-	replicas: int | *1
+	replicas: 1
 
 	// Clone static content from a git repo
-	gitRepo: string | *""
+	gitRepo: ""
 
-	// Branch to clone 
-	gitBranch: string | *""
+	// Branch to clone
+	gitBranch: ""
 }
 
 containers: nginx: {

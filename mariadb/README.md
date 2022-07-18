@@ -227,7 +227,7 @@ Then run/update the app like so:
 
 `acorn run [MARIADB_GALERA_IMAGE] --custom-mariadb-confg @config.yaml`
 
-This will get merged with the configuration defined in the Acorn. the defaul config block can be found [here](https://github.com/acorn-io/acorn-library/blob/main/mariadb-galera/acorn.cue#L207).
+This will get merged with the configuration defined in the Acorn. the defaul config block can be found [here](https://github.com/acorn-io/acorn-library/blob/main/mariadb-galera/Acornfile#L207).
 
 Some of the configuration values can not be changed.
 
