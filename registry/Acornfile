@@ -1,33 +1,40 @@
 args: {
-	//Cache backend for blobdescriptor default 'inmemory' you can also use redis
+	// Cache backend for blobdescriptor default 'inmemory' you can also use 'redis'
 	storageCache: "inmemory" | "redis"
 
-	//Enable metrics endpoint
-	enableMetrics: true
+	// Disable metrics endpoint
+	disableMetrics: false
 
-	//This is the username allowed to login and push items to the registry. Default is randomly generated and can be obtained from the secret"
+	// This is the username allowed to login and push items to the registry. Default is randomly generated and can be obtained from the secret"
 	htpasswdUsername: ""
 
-	//Number of registry containers to run.
+	// Number of registry containers to run.
 	scale: 1
 
-	//Provide the complete storage configuration blob in registry config format.
+	// Provide the complete storage configuration blob in registry config format.
 	storageConfig: {}
 
-	//Provide the complete auth configuration blob in registry config format.
+	// Provide the complete auth configuration blob in registry config format.
 	authConfig: {}
 
-	//Provide additional configuration for the registry
+	// Provide additional configuration for the registry
 	extraRegistryConfig: {}
+}
+
+profiles: {
+	build: {
+		// So the redis Acorn Image is built and packaged into this Acorn
+		storageCache: "redis"
+	}
 }
 
 containers: {
 	registry: {
 		image:  "registry:2.8.1"
 		scale:  args.scale
-		expose: "5000:5000/http"
-		if args.enableMetrics {
-			ports: "5001:5001/http"
+		ports: expose: "5000:5000/http"
+		if !args.disableMetrics {
+			ports: internal: "5001:5001/http"
 		}
 		files: {
 			"/auth/htpasswd":                  "secret://generated-htpasswd/content?onchange=no-action"
@@ -76,7 +83,7 @@ secrets: {
 	}
 	"registry-config": {
 		type: "template"
-		data: {template: std.toYAML(localData.registryConfig)}
+		data: {template: std.toYAML(regConfig)}
 	}
 	"registry-http-secret": type: "token"
 
@@ -84,6 +91,7 @@ secrets: {
 	"user-secret-data": type: "opaque"
 }
 
+let regConfig = localData.static.registryConfig & localData.variable.registryConfig
 localData: {
 	storageDriver: args.storageConfig
 	if len(storageDriver) == 0 {
@@ -98,7 +106,8 @@ localData: {
 		}
 	}
 
-	registryConfig: args.extraRegistryConfig & {
+	registryConfig: {}
+	static: registryConfig: {
 		version: "0.1"
 		log: fields: service:           "registry"
 		storage: cache: blobdescriptor: args.storageCache
@@ -118,26 +127,29 @@ localData: {
 				threshold: 3
 			}
 		}
-	}
+	} 
+	variable: registryConfig: std.merge(localData.registryConfig, args.extraRegistryConfig)
 
 	if args.storageCache == "redis" {
+		static: registryConfig: redis: {
+				addr:         "redis:6379"
+				db:           0
+		} 
 		registryConfig: redis: {
-			password:     string | *"${secret://redis.redis-auth/token}"
-			addr:         "redis:6379"
-			db:           0
-			dialtimeout:  string | *"10ms"
-			readtimeout:  string | *"10ms"
-			writetimeout: string | *"10ms"
+			password:     "${secret://redis.redis-auth/token}"
+			dialtimeout:  "10ms"
+			readtimeout:  "10ms"
+			writetimeout: "10ms"
 			pool: {
-				maxidle:     int | *16
-				maxactive:   int | *64
-				idletimeout: string | *"300s"
+				maxidle:     16
+				maxactive:   64
+				idletimeout: "300s"
 			}
 		}
 	}
 
-	if args.enableMetrics {
-		registryConfig: metricsConfig: debug: {
+	if !args.disableMetrics {
+		static: registryConfig: metricsConfig: debug: {
 			addr: "0.0.0.0:5001"
 			prometheus: {
 				enabled: true
