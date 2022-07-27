@@ -22,9 +22,9 @@ for l in std.range(args.leaders) {
 				image: "redis:7-alpine"
 				cmd: ["/etc/redis/6379.conf"]
 				if args.leaders > 1 {
-					ports: "16379:16379/tcp"
+					ports: internal: "16379:16379/tcp"
 				}
-				expose: "6379:6379/tcp"
+				ports: expose: "6379:6379/tcp"
 				env: {
 					"REDISCLI_AUTH": "secret://redis-auth/token"
 				}
@@ -76,12 +76,12 @@ secrets: {
 	}
 	"redis-leader-config": {
 		type: "template"
-		data: template: std.join([ for i, v in leaderConfigTemplate {"\(i) \(v)"}], ",")
+		data: template: std.join([ for i, v in leaderConfigTemplate {"\(i) \(v)"}], "\n")
 	}
 	if args.replicas != 0 {
 		"redis-follower-config": {
 			type: "template"
-			data: template: std.join([ for i, v in followerConfigTemplate {"\(i) \(v)"}], ",")
+			data: template: std.join([ for i, v in followerConfigTemplate {"\(i) \(v)"}], "\n")
 		}
 	}
 
@@ -107,33 +107,38 @@ if args.leaders > 1 {
 			]
 		}
 	}
-	localData: redis:
-		leaderConfig: {
-			"cluster-enabled":      "yes"
-			"cluster-config-file":  "nodes.conf"
-			"cluster-node-timeout": int | *5000
-			appendonly:             "yes"
-		}
+	localData: redis: static: leaderConfig: localData.redis.static.leaderConfig & {
+		"cluster-enabled":     "yes"
+		"cluster-config-file": "nodes.conf"
+		appendonly:            "yes"
+	}
+	localData: redis: leaderConfig: localData.redis.leaderConfig & {
+		"cluster-node-timeout": 5000
+	}
 }
 
-let leaderConfigTemplate = localData.redis.commonConfig & localData.redis.leaderConfig & args.leaderConfig
-let followerConfigTemplate = localData.redis.commonConfig & localData.redis.followerConfig & args.followerConfig
+let leaderConfigTemplate = localData.redis.static.commonConfig & localData.redis.static.leaderConfig & std.merge(args.leaderConfig, localData.redis.leaderConfig)
+let followerConfigTemplate = localData.redis.static.commonConfig & localData.redis.static.followerConfig & std.merge(localData.redis.followerConfig, args.followerConfig)
 localData: {
 	redis: {
-		commonConfig: {
-			requirepass: "${secret://redis-auth/token}"
-			masterauth:  "${secret://redis-auth/token}"
-			port:        6379
-			dir:         "/data"
-			"######":    " ROLE CONFIG ######"
-		}
-		leaderConfig: "tcp-keepalive": int | *60
-		followerConfig: {...} | *{}
-		if args.replicas != 0 {
-			followerConfig: {
-				slaveof:           "redis-0-0 6379"
-				"slave-read-only": "yes"
+		leaderConfig: "tcp-keepalive": 60
+		followerConfig: {}
+		static: {
+			if args.replicas != 0 {
+				followerConfig: {
+					slaveof:           "redis-0-0 6379"
+					"slave-read-only": "yes"
+				}
 			}
+			commonConfig: {
+				requirepass: "${secret://redis-auth/token}"
+				masterauth:  "${secret://redis-auth/token}"
+				port:        6379
+				dir:         "/data"
+				"######":    " ROLE CONFIG ######"
+			}
+			leaderConfig: {}
+			followerConfig: {}
 		}
 	}
 	serverCount: args.leaders + (args.leaders * args.replicas)
