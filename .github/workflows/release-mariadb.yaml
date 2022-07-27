@@ -1,0 +1,26 @@
+name: release-mariadb-acorn
+
+on:
+  push:
+    tags:
+      - "mariadb-v*"
+
+jobs:
+  push:
+    runs-on: buildjet-4vcpu-ubuntu-2004
+    steps:
+      - uses: actions/checkout@v3
+      - uses: acorn-io/actions-setup@v1
+        with:
+          token: ${{ secrets.PULL_TOKEN }}
+      - uses: acorn-io/actions-login@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set tag
+        run: echo "TAG=${GITHUB_REF#refs/*/mariadb-}" >> $GITHUB_ENV
+      - name: Build and push acorn
+        run: |
+          acorn build --platform linux/amd64 --platform linux/arm64 -t ghcr.io/acorn-io/library/mariadb:$TAG ./mariadb/
+          acorn push ghcr.io/acorn-io/library/mariadb:$TAG
