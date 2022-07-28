@@ -265,22 +265,24 @@ secrets: {
 let mConfig = localData.mariadbConfig
 for replica in std.range(args.replicas) {
 	for section, configBlock in mConfig {
-		secrets: {
-			"mariadb-\(replica)-\(section)-config": {
-				type: "template"
-				if !(mConfig.replicas["mariadb-\(replica)"]["\(section)"] != _|_) {
-					data: template: "[\(section)]\n" +
-					std.join([ for parameter, value in configBlock {"\(parameter)=\(value)"}], "\n")
-				}
-				if mConfig.replicas["mariadb-\(replica)"]["\(section)"] != _|_ {
-					data: template: "[\(section)]\n" +
-						std.join([ for parameter, value in configBlock & mConfig.replicas["mariadb-\(replica)"]["\(section)"] {"\(parameter)=\(value)"}], "\n")
+		if section != "replicas" {
+			secrets: {
+				"mariadb-\(replica)-\(section)-config": {
+					type: "template"
+					if !(mConfig.replicas["mariadb-\(replica)"]["\(section)"] != _|_) {
+						data: template: "[\(section)]\n" +
+						std.join([ for parameter, value in configBlock {"\(parameter)=\(value)"}], "\n")
+					}
+					if mConfig.replicas["mariadb-\(replica)"]["\(section)"] != _|_ {
+						data: template: "[\(section)]\n" +
+							std.join([ for parameter, value in configBlock & mConfig.replicas["mariadb-\(replica)"]["\(section)"] {"\(parameter)=\(value)"}], "\n")
+					}
 				}
 			}
-		}
-		containers: [Name= =~"mariadb-\(replica)"]: {
-			files: {
-				"/etc/mysql/mariadb.conf.d/\(section).cnf": "secret://mariadb-\(replica)-\(section)-config/template?onchange=no-action"
+			containers: [Name= =~"mariadb-\(replica)"]: {
+				files: {
+					"/etc/mysql/mariadb.conf.d/\(section).cnf": "secret://mariadb-\(replica)-\(section)-config/template?onchange=no-action"
+				}
 			}
 		}
 	}
@@ -353,5 +355,6 @@ localData: {
 			innodb_autoinc_lock_mode:       2
 			wsrep_replicate_myisam:         "ON"
 		}
+		replicas: {}
 	})
 }
