@@ -220,8 +220,10 @@ if args.restoreFromBackup != "" {
 	volumes: "restore-scratch": {}
 }
 
-volumes: {
-	"mysql-backup-vol": {}
+if args.backupSchedule != "" || args.restoreFromBackup != "" {
+	volumes: {
+		"mysql-backup-vol": {}
+	}
 }
 
 secrets: {
