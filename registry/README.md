@@ -14,7 +14,7 @@ The OCI registry requires TLS in most cases to work well. With that in mind, you
 
 Run this command in a cluster with Acorn installed:
 
-`acorn run -d <fqdn>:registry acorn-io/library/registry:2.8.1`
+`acorn run -p <fqdn>:registry acorn-io/library/registry:2.8.1`
 
 This will deploy the registry with `inmemory` cache, filesystem storage, and generated htpasswd user.
 
@@ -32,7 +32,7 @@ registry-user-creds-cxzlg   kubernetes.io/basic-auth   password   secretpassword
 registry-user-creds-cxzlg   kubernetes.io/basic-auth   username   user
 ```
 
-You will also want to place a TLS secret in the `acorn` namespace with the `fqdn` in the SANS. That will allow loginging in with Docker CLI using the password.
+You will also want to place a TLS secret in the `acorn` namespace with the `fqdn` in the SANS. That will allow logging in with Docker CLI using the password.
 
 `docker login -u <user> <fqdn>`
 
@@ -57,7 +57,7 @@ Ports:     registry:5000/http
       --storage-config string          Provide the complete storage configuration blob in registry config format.
 ```
 
-If you need to provide secret data to user defined configurations, you can create a secret and bind it at runtime to the `user-secret-data` secret. See storage example in the advanced section for reference.
+If you need to provide secret data to user-defined configurations, you can create a secret and bind it at runtime to the `user-secret-data` secret. See the storage example in the advanced section for reference.
 
 ## Advanced Usage
 
@@ -66,13 +66,13 @@ If you need to provide secret data to user defined configurations, you can creat
 #### Internal
 
 To use `redis` as the storage cache launch the acorn with the following options
-`acorn run -d <fqdn>:registry acorn-io/library/registry:2.8.1 --storage-cache redis`
+`acorn run -p <fqdn>:registry acorn-io/library/registry:2.8.1 --storage-cache redis`
 
 This will deploy a Redis container as part of the overall and configure the registry to leverage it.
 
-### Specify user/password to use with built in basic auth
+### Specify user/password to use with built-in basic auth
 
-`acorn run -d <fqdn>:registry acorn-io/library/registry:2.8.1 --htpasswd-username <username> [--htpasswd-password <password>]`
+`acorn run -p <fqdn>:registry acorn-io/library/registry:2.8.1 --htpasswd-username <username> [--htpasswd-password <password>]`
 
 If no password is provided, Acorn will generate one and place it in the secret. You can use the method in the quickstart to get the generated password.
 
@@ -103,7 +103,7 @@ This config blob is using data from the secret `user-secret-data`. This should b
 To consume this as part of the deployment run:
 
 ```shell
-> acorn run -d <fqdn>:registry --secret my-data:user-secret-data acorn-io/library/registry:2.8.1 --storage-config @s3-config.yaml
+> acorn run -p <fqdn>:registry --secret my-data:user-secret-data acorn-io/library/registry:2.8.1 --storage-config @s3-config.yaml
 ```
 
 ### Configure auth
@@ -124,4 +124,4 @@ middleware:
 
 Pass this config at run time
 
-`acorn run -d <fqdn>:registry -s my-data:user-secret-data acorn-io/library/registry:2.8.1 --extra-config @middleware.yaml`
+`acorn run -p <fqdn>:registry -s my-data:user-secret-data acorn-io/library/registry:2.8.1 --extra-config @middleware.yaml`

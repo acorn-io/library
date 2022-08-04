@@ -1,6 +1,6 @@
 args: {
 	// Cache backend for blobdescriptor default 'inmemory' you can also use 'redis'
-	storageCache: "inmemory" | "redis"
+	storageCache: "inmemory"
 
 	// Disable metrics endpoint
 	disableMetrics: false
@@ -41,6 +41,12 @@ containers: {
 			"/etc/docker/registry/config.yml": "secret://registry-config/template?onchange=redeploy"
 		}
 		probes: ready: "http://localhost:5000"
+
+		if len(args.storageConfig) == 0 {
+			dirs: {
+				"/var/lib/registry": "volume://registry-data"
+			}
+		}
 	}
 }
 
@@ -55,6 +61,12 @@ jobs: {
 		// Output of a generated secret needs to be placed in the file /run/secrets/output.
 		cmd: ["htpasswd -Bbc /run/secrets/output $USER $PASS"]
 	}
+}
+
+if len(args.storageConfig) == 0 {
+	volumes: {
+		"registry-data": {}
+	}	
 }
 
 acorns: {
@@ -93,18 +105,16 @@ secrets: {
 
 let regConfig = localData.static.registryConfig & localData.variable.registryConfig
 localData: {
-	storageDriver: args.storageConfig
-	if len(storageDriver) == 0 {
-		storageDriver: filesystem: rootdirectory: "/var/lib/registry"
-	}
+	storageDriver: std.ifelse(len(args.storageConfig) != 0, args.storageConfig, {
+		filesystem: rootdirectory: "/var/lib/registry"
+	})
 
-	authConfig: args.authConfig
-	if len(authConfig) == 0 {
-		authConfig: htpasswd: {
+	authConfig: std.ifelse(len(args.authConfig) != 0, args.authConfig, {
+		htpasswd: {
 			realm: "Registry Realm"
 			path:  "/auth/htpasswd"
 		}
-	}
+	})
 
 	registryConfig: {}
 	static: registryConfig: {
