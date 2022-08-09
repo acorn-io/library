@@ -12,21 +12,21 @@ This Acorn provides a multi-node galera cluster.
 
 `acorn run [MARIADB_GALERA_IMAGE]`
 
-This will create a three node cluster with a default database acorn.
+This will create a three-node cluster with a default database acorn.
 
 You can get the username and root password if needed from the generated secrets.
 
 ## Production considerations
 
-By default this will start a single instance of MariaDB with 1 replica on a 10GB volume from the default storage class. In a production setting you will want to customize this, along with the size and storage class of the backup volumes.
+By default, this will start a single instance of MariaDB with 1 replica on a 10GB volume from the default storage class. In a production setting, you will want to customize this, along with the size and storage class of the backup volumes.
 
 #### TODOs
 
 Document how to mount volumes and custom types.
 
-* Add a way to reset root password
+* Add a way to reset the root password
 * Add a way to pass in custom backup scripts
-* Add clean up of older backups.. also limit the number kept.
+Add clean-up of older backups.. also limit the number kept.
 
 ## Available options
 
@@ -51,19 +51,19 @@ Ports:     mariadb-0:3306/tcp
 
 ### Accessing mariadb
 
-By default the Acorn creates a single replica which can be accessed via the `mariadb-0` service.
+By default, the Acorn creates a single replica that can be accessed via the `mariadb-0` service.
 
 If you are going to run in an active-active state with multiple r/w replicas you will want to expose the `mariadb` service and access that through a load balancer.
 
 ### Adding replicas
 
-By default the MariaDB chart starts a single r/w replica. In production settings you would typically want more then one replica running. Users have two options with this chart. One method is to add additional passive followers to the primary server. When one of these passive replicas fail or experience an outage nothing happens to the running primary server. If the primary r/w replica fails then service will be down until it is restored.
+By default, the MariaDB chart starts a single r/w replica. In production settings, you would typically want more than one replica running. Users have two options with this chart. One method is to add additional passive followers to the primary server. When one of these passive replicas fails or experiences an outage nothing happens to the running primary server. If the primary r/w replica fails then service will be down until it is restored.
 
 Alternatively, the Acorn can configure the replicas to run in an active-active state with multiple replicas able to perform r/w operations.
 
 #### Active-Passive replication
 
-If you would like to run active-passive then you will need to create a custom yaml file like so:
+If you would like to run active-passive then you will need to create a custom YAML file like so:
 
 config.yaml
 
@@ -79,13 +79,12 @@ replicas:
 Then update your deployment:
 `acorn update [APP-NAME] --custom-mariadb-config @config.yaml --replicas 2`
 
-This will startup a second replica that can be used for backups, and read-only access.
+This will start up a second replica that can be used for backups, and read-only access.
 
 #### Active-Active replication
 
-Galera clusters have a quorem algorithm to prevent split brain scenarios. Ideally clusters run with an odd number of replicas.
-
-By default there are three replicas running and there shouldn't be less. This allows for 1 replica to fail and still serve data. Additional replicas can be added by updating the application to the total number of replicas desired in the end state.
+Galera clusters have a quorum algorithm to prevent split-brain scenarios. Clusters should run with an odd number of replicas to avoid split-brain scenarios.
+Three replicas are running by default and there shouldn't be fewer. This allows for 1 replica to fail and still serve data. Additional replicas can be added by updating the application to the total number of replicas desired in the end state.
 
 `acorn update [APP-NAME] --replicas 5`
 
@@ -155,7 +154,7 @@ Here is an example of how you could do daily backups:
 If you would like to add backups to an already running cluster, you can do:
 `acorn update [APP-NAME] --backup-schedule "0 0 * * *"`
 
-Backups are run from pod that will mount both the data volume from the `mariadb-0` replica and a separate backup volume. The job uses `mariabackup` to perform the backup of the database cluster.
+Backups are run from a pod that will mount both the data volume from the `mariadb-0` replica and a separate `mariadb-backup-vol` volume. The job uses the `mariabackup` user to perform the backup of the database cluster.
 
 #### Listing available backups
 
@@ -205,14 +204,14 @@ config_block:
   key: "value"
 ```
 
-So to pass or update a setting in the `mysqld` configuration block create a config.yaml with the content:
+So to pass or update a setting in the `mysqld` configuration block creates a config.yaml with the content:
 
 ```yaml
 mysqld:
   max_connections: 1024
 ```
 
-You can set per-replica configurations if needed by placing the configurations under the `replica` top level key. Each node, specified in `mariadb-\(i)` where `i` is the replica number, can have custom configuration per config block.
+You can set per-replica configurations if needed by placing the configurations under the `replica` top-level key. Each node, specified in `mariadb-\(i)` where `i` is the replica number, can have a custom configuration per config block.
 
 ```yaml
 mysqld:
@@ -225,9 +224,9 @@ replicas:
 
 Then run/update the app like so:
 
-`acorn run [MARIADB_GALERA_IMAGE] --custom-mariadb-confg @config.yaml`
+`acorn run [MARIADB_GALERA_IMAGE] --custom-mariadb-config @config.yaml`
 
-This will get merged with the configuration defined in the Acorn. the defaul config block can be found [here](https://github.com/acorn-io/acorn-library/blob/main/mariadb-galera/Acornfile#L207).
+This will get merged with the configuration defined in the Acorn. the default config block can be found [here](https://github.com/acorn-io/acorn-library/blob/main/mariadb-galera/Acornfile#L207).
 
 Some of the configuration values can not be changed.
 
@@ -247,7 +246,7 @@ The clusters will come up as expected after this.
 
 ### Active - Active recovery from shutdown/quorem loss
 
-When a cluster is completely shutdown, or has lost a majority of the nodes you need to follow a series of manual steps to recover.
+When a cluster is completely shut down or has lost a majority of the nodes you need to follow a series of manual steps to recover.
 
 1.) Update the deployment with the `acorn update [APP-NAME] --recovery` flag.
 
@@ -260,8 +259,8 @@ mariadb-1-7d977b8fb8-f8lwx/mariadb-1: 2022-06-17 23:57:17 0 [Note] WSREP: Recove
 mariadb-2-7f49689648-6h7kf/mariadb-2: 2022-06-17 23:57:18 0 [Note] WSREP: Recovered position: 8d5f1139-ee97-11ec-b8ef-7359029eaa77:3
 ```
 
-3.) Find the node with the highest position value. In this case we can use `mariadb-1` or `mariadb-2` since they are both at 3.
+3.) Find the node with the highest position value. In this case, we can use `mariadb-1` or `mariadb-2` since they are both at 3.
 
-4.) Update the app so that `acorn update [APP-NAME] --recovery --force-recover --boot-strap-index 2`. We are using `2` because it is the most advanced. If the containers have come up and you do not see "failed to update grastate.data" then the app is ready to update.
+4.) Update the app so that `acorn update [APP-NAME] --recovery --force-recover --boot-strap-index 2`. We are using `2` because it is the most advanced. If the containers have come up and you do not see `failed to update grastate.data` then the app is ready to update.
 
 5.) `acorn update [APP-NAME] --recovery=false --force-recover=false`. This will cause the containers to restart and the new boot-strap-index node will start the cluster.
