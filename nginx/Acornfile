@@ -10,7 +10,7 @@ args: {
 }
 
 containers: nginx: {
-	image:  "nginx"
+	image:  "nginx:1.23-alpine"
 	scale:  args.replicas
 	ports: expose: "80:80/http"
 
@@ -25,7 +25,7 @@ containers: nginx: {
 	if args.gitRepo != "" {
 		sidecars: {
 			git: {
-				image: "alpine/git:v2.34.2"
+				image: "alpine/git:v2.36.2"
 				init:  true
 				dirs: {
 					"/var/www/html": "volume://site-data"

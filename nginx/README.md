@@ -15,7 +15,7 @@ This will clone content from this site into the HTML root directory and serve it
 
 To expose this service via ingress:
 
-`acorn run -d my-app.example.com:nginx [IMAGE] --git-repo ...`
+`acorn run -p my-app.example.com:nginx [IMAGE] --git-repo ...`
 
 ### Available options
 
@@ -35,7 +35,7 @@ Ports:     nginx:80/http
 ### Configure custom server blocks
 
 Create a custom secret with the keys equal to the name of the file to place in `/etc/nginx/conf.d/`
-The content should be a base64 encoded nginx server block.
+The content should be a base64 encoded Nginx server block.
 
 When running the acorn:
 
@@ -43,7 +43,7 @@ When running the acorn:
 
 ### Configure base configuration
 
-Create a custom secret with that has a data key `template` with the full content of the nginx.conf file to be used.
+Create a custom secret that has a data key `template` with the full content of the nginx.conf file to be used.
 
 When running the acorn pass in the secret name:
 
@@ -53,6 +53,10 @@ When running the acorn pass in the secret name:
 
 Create a secret with the ssh keys to use. The keys must already be trusted by the remote repository. You can create the secret like:
 
-`kubectl create secret -n acorn-redis generic my-ssh-keys --from-file=/Users/me/.ssh/id_rsa`
+`acorn secret create my-ssh-keys --file=/Users/me/.ssh/id_rsa`
 
 when you run the acorn bind in the secret:
+
+```shell
+acorn run -s my-ssh-keys:git-clone-ssh-keys [IMAGE]
+```

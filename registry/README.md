@@ -98,7 +98,7 @@ s3:
 
 This config blob is using data from the secret `user-secret-data`. This should be populated ahead of time:
 
-`kubectl create secret generic my-data --type opaque --from-literal=s3accesskey=myaccesskey --from-literal=s3secretkey=mysecretkey`
+`acorn secret create my-data --data s3accesskey=myaccesskey --data s3secretkey=mysecretkey`
 
 To consume this as part of the deployment run:
 
