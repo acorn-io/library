@@ -32,10 +32,12 @@ containers: {
 	registry: {
 		image:  "registry:2.8.1"
 		scale:  args.scale
-		ports: expose: "5000:5000/http"
-		if !args.disableMetrics {
-			ports: internal: "5001:5001/http"
-		}
+		ports: expose: [
+            "5000:5000/http",
+		    if !args.disableMetrics {
+			    "metrics:5001/http",
+            }
+        ]
 		files: {
 			"/auth/htpasswd":                  "secret://generated-htpasswd/content?onchange=no-action"
 			"/etc/docker/registry/config.yml": "secret://registry-config/template?onchange=redeploy"
@@ -159,8 +161,8 @@ localData: {
 	}
 
 	if !args.disableMetrics {
-		static: registryConfig: metricsConfig: debug: {
-			addr: "0.0.0.0:5001"
+		static: registryConfig: http: debug: {
+			addr: ":5001"
 			prometheus: {
 				enabled: true
 				path:    "/metrics"
