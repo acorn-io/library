@@ -1,0 +1,331 @@
+args: {
+    // Specify whether MongoDB instance is a standalone or replica set
+    isReplicaSet: false
+    // Custom user to be created during the initialization
+    dbUserName: ""
+    // Custom database to be created during the initialization
+    dbName: "acorn"
+    replicas: 1
+    // Enable diagnostic mode
+    diagnosticMode: false
+    // Enable authentication
+    authEnabled: true
+    // Run arbiter node
+    // Mongodb additional command line flags
+    extraFlags: ""
+    arbiterEnabled: false
+    // Arbiter additional command line flags
+    arbiterExtraFlargs: ""
+    // Run hidden node
+    hiddenEnabled: false
+    hiddenReplicas: 1
+    // Hidden node additional command line flags
+    hiddenExtraFlargs: ""
+    // App installed namespace. NOTE(joseb): before fieldRef is supported,
+    appNamespace: "mongo"
+}
+profiles: {
+    prod: {
+        isReplicaSet: true
+        arbiterEnabled: true
+        hiddenEnabled: true
+        replicas: 3
+    }
+}
+    
+if !args.isReplicaSet {
+    containers: {
+        "mongodb-0": {
+            image: "bitnami/mongodb:6.0.1-debian-11-r1"
+            ports: {
+                expose: "27017:27017"
+            }
+            env: {
+                "": "27017"
+                "ALLOW_EMPTY_PASSWORD":               "\(!args.authEnabled)"
+                "MONGODB_USERNAME": "secret://db-user-credentials/username?onchange=no-action"
+                "MONGODB_DATABASE": "\(args.dbName)"
+                if args.authEnabled {
+                    "MONGODB_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
+                    "MONGODB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
+                    "MONGODB_PASSWORD": "secret://db-user-credentials/password?onchange=no-action"
+                }
+                if args.extraFlags != "" {
+                    "MONGODB_EXTRA_FLAGS": "\(args.extraFlags)"
+                }
+            }
+            if args.diagnosticMode {
+                command: ["sleep"]
+                args: ["infinity"]
+            }
+            if !args.diagnosticMode {
+                probes: [
+                    {
+                        type:                "liveness"
+                        initialDelaySeconds: 30
+                        periodSeconds:       20
+                        timeoutSeconds:      10
+                        successThreshold:    1
+                        failureThreshold:    6
+                        exec: command: [
+                            "bash",
+                            "/acorn/scripts/ping.sh"
+                        ]
+                    },
+                    {
+                        type:                "readiness"
+                        initialDelaySeconds: 5
+                        periodSeconds:       10
+                        timeoutSeconds:      5
+                        successThreshold:    1
+                        failureThreshold:    6
+                        exec: command: [
+                            "bash",
+                            "/acorn/scripts/ping.sh"
+                        ]
+                    }
+                ]
+            }
+            dirs: {
+                "/acorn/scripts": "./scripts"
+                "/bitnami/mongodb": "volume://mongodb-data-0"
+            }
+        }
+    }
+    volumes: {
+        "mongodb-data-0": {}
+    }
+}
+
+if args.isReplicaSet {
+    let mongodbList = std.join([for i in std.range(args.replicas) {"mongodb-\(i).\(args.appNamespace).svc.cluster.local:27017"}], ",")
+    for i in std.range(args.replicas) {
+        containers: {
+            "mongodb-\(i)": {
+                image: "bitnami/mongodb:6.0.1-debian-11-r1"
+                ports: {
+                    expose: "27017:27017"
+                }
+                env: {
+                    "MY_POD_NAMESPACE": "\(args.appNamespace)"
+                    "MONGODB_INITIAL_PRIMARY_HOST":  "mongodb-0.\(args.appNamespace).svc.cluster.local"
+                    "MONGODB_REPLICA_SET_NAME":      "rs0"
+                    "MONGODB_ADVERTISED_HOSTNAME": "mongodb-\(i).\(args.appNamespace).svc.cluster.local"
+                    "MONGODB_PORT_NUMBER": "27017"
+                    "MY_POD_INDEX": "\(i)"
+                    "MONGODB_LIST": "\(mongodbList)"
+                    "ALLOW_EMPTY_PASSWORD":               "\(!args.authEnabled)"
+                    "MONGODB_USERNAME": "secret://db-user-credentials/username?onchange=no-action"
+                    "MONGODB_DATABASE": "\(args.dbName)"
+                    if args.authEnabled {
+                        "MONGODB_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
+                        "MONGODB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
+                        "MONGODB_PASSWORD": "secret://db-user-credentials/password?onchange=no-action"
+                        "MONGODB_REPLICA_SET_KEY": "secret://replicaset-key/key?onchange=no-action"
+                    }
+                    if args.extraFlags != "" {
+                        "MONGODB_EXTRA_FLAGS": "\(args.extraFlags)"
+                    }
+                }
+                if args.diagnosticMode {
+                    command: ["sleep"]
+                    args: ["infinity"]
+                }
+                if !args.diagnosticMode {
+
+                    command: ["/acorn/scripts/setup.sh"]
+                    probes: [
+                        {
+                            type:                "liveness"
+                            initialDelaySeconds: 30
+                            periodSeconds:       20
+                            timeoutSeconds:      10
+                            successThreshold:    1
+                            failureThreshold:    6
+                            exec: command: [
+                                "bash",
+                                "/acorn/scripts/ping.sh"
+                            ]
+                        },
+                        {
+                            type:                "readiness"
+                            initialDelaySeconds: 5
+                            periodSeconds:       10
+                            timeoutSeconds:      5
+                            successThreshold:    1
+                            failureThreshold:    6
+                            exec: command: [
+                                "bash",
+                                "/acorn/scripts/ping.sh"
+                            ]
+                        }
+                    ]
+                }
+                dirs: {
+                    "/acorn/scripts": "./scripts"
+                    "/bitnami/mongodb": "volume://mongodb-data-\(i)"
+                }
+            }
+        }
+        volumes: {
+            "mongodb-data-\(i)": {}
+        }
+    }
+}
+
+if args.isReplicaSet && args.arbiterEnabled {
+    containers: {
+        "arbiter-0": {
+            image: "bitnami/mongodb:6.0.1-debian-11-r1"
+            ports: {
+                expose: "27017:27017"
+            }
+            env: {
+                "MY_POD_NAMESPACE": "\(args.appNamespace)"
+                "MONGODB_REPLICA_SET_MODE": "arbiter"
+                "MONGODB_INITIAL_PRIMARY_HOST":  "mongodb-0.\(args.appNamespace).svc.cluster.local"
+                "MONGODB_REPLICA_SET_NAME":      "rs0"
+                "MONGODB_ADVERTISED_HOSTNAME": "arbiter-0.\(args.appNamespace).svc.cluster.local"
+                "ALLOW_EMPTY_PASSWORD":               "\(!args.authEnabled)"
+                if args.authEnabled {
+                    "MONGODB_INITIAL_PRIMARY_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
+                    "MONGODB_INITIAL_PRIMARY_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
+                    "MONGODB_REPLICA_SET_KEY": "secret://replicaset-key/key?onchange=no-action"
+                }
+                if args.arbiterExtraFlargs != "" {
+                    "MONGODB_EXTRA_FLAGS": "\(args.arbiterExtraFlargs)"
+                }
+            }
+            if args.diagnosticMode {
+                command: ["sleep"]
+                args: ["infinity"]
+            }
+            if !args.diagnosticMode {
+				probes: [
+					{
+						type:                "liveness"
+						initialDelaySeconds: 30
+						periodSeconds:       20
+						timeoutSeconds:      10
+						successThreshold:    1
+						failureThreshold:    6
+                        tcp: {
+                            url: "tcp://localhost:27017"
+                        }
+					},
+					{
+						type:                "readiness"
+						initialDelaySeconds: 5
+						periodSeconds:       20
+						timeoutSeconds:      10
+						successThreshold:    1
+						failureThreshold:    6
+                        tcp: {
+                            url: "tcp://localhost:27017"
+                        }
+                    }
+                ]
+            }
+        }
+    }
+}
+
+if args.isReplicaSet && args.hiddenEnabled {   
+    for i in std.range(args.hiddenReplicas) {
+        containers: {
+            "hidden-\(i)": {
+                image: "bitnami/mongodb:6.0.1-debian-11-r1"
+                ports: {
+                    expose: "27017:27017"
+                }
+                env: {
+                    "MY_POD_NAMESPACE": "\(args.appNamespace)"
+                    "MONGODB_REPLICA_SET_MODE": "hidden"
+                    "MONGODB_INITIAL_PRIMARY_HOST":  "mongodb-0.\(args.appNamespace).svc.cluster.local"
+                    "MONGODB_REPLICA_SET_NAME":      "rs0"
+                    "MONGODB_ADVERTISED_HOSTNAME": "hidden-\(i).\(args.appNamespace).svc.cluster.local"
+                    "ALLOW_EMPTY_PASSWORD":               "\(!args.authEnabled)"
+                    "MONGODB_USERNAME": "secret://db-user-credentials/username?onchange=no-action"
+                    "MONGODB_DATABASE": "secret://db-user-credentials/password?onchange=no-action"
+                    if args.authEnabled {
+                        "MONGODB_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
+                        "MONGODB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
+                        "MONGODB_PASSWORD": "\(args.dbName)"
+                        "MONGODB_REPLICA_SET_KEY": "secret://replicaset-key/key?onchange=no-action"
+                    }
+                    if args.hiddenExtraFlargs != "" {
+                        "MONGODB_EXTRA_FLAGS": "\(args.hiddenExtraFlargs)"
+                    }
+                }
+                if args.diagnosticMode {
+                    command: ["sleep"]
+                    args: ["infinity"]
+                }
+                if !args.diagnosticMode {
+                    command: ["/acorn/scripts/setup-hidden.sh"]
+                    probes: [
+                        {
+                            type:                "liveness"
+                            initialDelaySeconds: 30
+                            periodSeconds:       20
+                            timeoutSeconds:      10
+                            successThreshold:    1
+                            failureThreshold:    6
+                            exec: command: [
+                                "bash",
+                                "/acorn/scripts/ping.sh"
+                            ]
+                        },
+                        {
+                            type:                "readiness"
+                            initialDelaySeconds: 5
+                            periodSeconds:       20
+                            timeoutSeconds:      10
+                            successThreshold:    1
+                            failureThreshold:    6
+                            exec: command: [
+                                "bash",
+                                "/acorn/scripts/ping.sh"
+                            ]
+                        }
+                    ]
+                }
+                dirs: {
+                    "/acorn/scripts": "./scripts"
+                    "/bitnami/mongodb": "volume://hidden-data-\(i)"
+                }
+            }
+        }
+        volumes: {
+            "hidden-data-\(i)": {}
+        }
+    }
+}
+
+secrets: {
+    "root-credentials": {
+        type: "basic"
+        data: {
+            username: "root"
+            password: ""
+        }
+    }
+    "db-user-credentials": {
+        type: "basic"
+        data: {
+            username: "\(args.dbUserName)"
+            password: ""
+        }
+    }
+    if args.isReplicaSet {
+        "replicaset-key-token": {
+            type: "token"
+        }
+        "replicaset-key": {
+            type: "template"
+            data: {
+                "key": "${secret://replicaset-key-token/token}"
+            }
+        }
+    }
+}
