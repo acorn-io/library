@@ -6,13 +6,17 @@ args: {
 
 	postgresDb: "acorn"
 
+	// It can be used to send arguments to postgres initdb
+	// This is useful for adding functionality like "--data-checksums"
 	postgresInitDbArgs: ""
 
+	// It can be used to define another location for the Postgres transaction log.
 	postgresInitDbWalDir: ""
 
 	postgresHostAuthMethod: ""
 
-	pgData: ""
+	// It can be used to define location for the database files
+	pgData: "/var/lib/postgresql/data"
 }
 
 containers: {
@@ -27,12 +31,15 @@ containers: {
 		}
 		env: {
 			"POSTGRES_PASSWORD": "secret://root-credentials/password"
-			"POSTGRES_USER": "secret://root-credentials/user"
-			"POSTGRES_DB": "secret://root-credentials/db"
+			"POSTGRES_USER": "secret://root-credentials/username"
+			"POSTGRES_DB": "\(args.postgresDb)"
 			"POSTGRES_INITDB_ARGS": "\(args.postgresInitDbArgs)"
 			"POSTGRES_INITDB_WALDIR": "\(args.postgresInitDbWalDir)"
 			"POSTGRES_HOST_AUTH_METHOD": "\(args.postgresHostAuthMethod)"
 			"PGDATA": "\(args.pgData)"
+		}
+		dirs: {
+			"\(args.pgData)": "volume://pgdata-0"
 		}
 	}
 }
@@ -42,8 +49,11 @@ secrets: {
 		type: "basic"
 		data: {
 			password: "\(args.postgresPassword)"
-			user: "\(args.postgresUser)"
-			db: "\(args.postgresDb)"
+			username: "\(args.postgresUser)"
 		}
 	}
+}
+
+volumes: {
+	"pgdata-0": {}
 }
