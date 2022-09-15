@@ -14,7 +14,7 @@ info "Advertised Port: $MONGODB_ADVERTISED_PORT_NUMBER"
 current_primary=""
 if is_dir_empty "${MONGODB_DATA_DIR}/db"; then
     info "Data dir empty, checking if the replica set already exists"
-    current_primary=$(mongosh admin --host $MONGODB_LIST --authenticationDatabase admin -u root -p $MONGODB_ROOT_PASSWORD --eval 'db.runCommand("ismaster")' | awk -F\' '/primary/ {print $2}')
+    current_primary=$(mongosh admin --host $MONGODB_URI --authenticationDatabase admin -u root -p $MONGODB_ROOT_PASSWORD --eval 'db.runCommand("ismaster")' | awk -F\' '/primary/ {print $2}')
     if ! is_empty_value "$current_primary"; then
     info "Detected existing primary: ${current_primary}"
     fi
@@ -42,6 +42,7 @@ if [[ "$MONGODB_REPLICA_SET_MODE" == "secondary" ]]; then
     export MONGODB_INITIAL_PRIMARY_ROOT_USER="$MONGODB_ROOT_USER"
     export MONGODB_INITIAL_PRIMARY_ROOT_PASSWORD="$MONGODB_ROOT_PASSWORD"
     export MONGODB_ROOT_PASSWORD=""
+    export MONGODB_USERNAME=""
     export MONGODB_EXTRA_USERNAMES=""
     export MONGODB_EXTRA_DATABASES=""
     export MONGODB_EXTRA_PASSWORDS=""

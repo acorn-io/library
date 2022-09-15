@@ -19,7 +19,7 @@ mkdir -p ${this_backup_dir}
 /usr/bin/mariabackup --backup --target-dir=${this_backup_dir} \
 	--user=${MARIADB_BACKUP_USER} --password=${MARIADB_BACKUP_PASSWORD} \
 	--host=${backup_host}
-	
+
 cd ${backup_root_dir}
 tar -zcvf ${backup_dir_name}.tgz ${this_backup_dir} && rm -rf ${this_backup_dir}
 
