@@ -1,8 +1,8 @@
 args: {
 	// The user credentials to be set
-	postgresPassword: "toor"
+	postgresPassword: "admin"
 
-	postgresUser: "root"
+	postgresUser: "admin"
 
 	postgresDb: "acorn"
 
