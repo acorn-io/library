@@ -1,23 +1,12 @@
 #!/bin/bash
 set -ex
-BACKUP_NAME_PREFIX=mongodbdump
-ARCHIVE_NAME="${BACKUP_NAME_PREFIX}.$(date +%Y%m%d-%H%M%S).gz"
-BACKUP_DIR='/backups'
 
-mkdir -p ${BACKUP_DIR}
-
-if [ -f "${BACKUP_DIR}/restore_in_progress" ]; then
-   echo "Restore in progress... exiting"
-   exit 0
-fi
-
-
-#Log message to a file or stdout
-#Params: $1 log level
-#Params: $2 service
-#Params: $3 message
-#Params: $4 Destination
-log() {
+# Log message to a file or stdout
+# Params: $1 log level
+# Params: $2 service
+# Params: $3 message
+# Params: $4 Destination
+function log() {
     LEVEL=$1
     SERVICE=$2
     MSG=$3
@@ -30,10 +19,24 @@ log() {
     fi
 }
 
-# get_archive_date function returns correct archive date
+# Returns correct archive date
 function get_archive_date(){
     local A_FILE="$1"
-    awk -F. '{print $(NF-2)}' <<< ${A_FILE} | tr -d "Z"
+    awk -F. '{print $(NF-1)}' <<< ${A_FILE} | tr -d "Z"
+}
+
+# Get the day delta since the archive file backup
+function seconds_difference() {
+    ARCHIVE_DATE=$( date --date="$1" +%s )
+    if [[ $? -ne 0 ]]; then
+        SECOND_DELTA=0
+    fi
+    CURRENT_DATE=$( date +%s )
+    SECOND_DELTA=$(($CURRENT_DATE-$ARCHIVE_DATE))
+    if [[ "$SECOND_DELTA" -lt 0 ]]; then
+        SECOND_DELTA=0
+    fi
+    echo $SECOND_DELTA
 }
 
 # This function takes a list of archives' names as an input
@@ -54,7 +57,7 @@ function get_archive_date(){
 # possible case, when we have several backups of the same date. E.g.
 # one manual, and one automatic.
 declare -A fileTable
-create_hash_table() {
+function create_hash_table() {
 unset fileTable
 fileList=$@
     for ARCHIVE_FILE in ${fileList}; do
@@ -74,16 +77,17 @@ fileList=$@
     done
 }
 
-remove_old_local_archives() {
-    SECONDS_TO_KEEP=$(( $((${DAYS_TO_KEEP_BACKUP}))*86400))
-    log INFO "mongodb_backup" "Deleting backups older than ${DAYS_TO_KEEP_BACKUP} days (${SECONDS_TO_KEEP} seconds)"
+# Remove backup archive files older than retain days
+function remove_old_local_archives() {
+    SECONDS_TO_KEEP=$(( $((${BACKUP_RETAIN_DAYS}))*86400))
+    log INFO "mongodb_backup" "Deleting backups older than ${BACKUP_RETAIN_DAYS} days (${SECONDS_TO_KEEP} seconds)"
 
     count=0
     # We iterate over the hash table, checking the delta in seconds (hash keys),
     # and minimum number of backups we must have in place. List of keys has to be sorted.
     for INDEX in $(tr " " "\n" <<< ${!fileTable[@]} | sort -n -); do
         ARCHIVE_FILE=${fileTable[${INDEX}]}
-        if [[ ${INDEX} -lt ${SECONDS_TO_KEEP} || ${count} -lt ${DAYS_TO_KEEP_BACKUP} ]]; then
+        if [[ ${INDEX} -lt ${SECONDS_TO_KEEP} || ${count} -lt ${BACKUP_RETAIN_DAYS} ]]; then
             ((count++))
             log INFO "mongodb_backup" "Keeping file(s) ${ARCHIVE_FILE}."
         else
@@ -97,6 +101,17 @@ remove_old_local_archives() {
         fi
     done
 }
+
+BACKUP_NAME_PREFIX=mongodbdump
+ARCHIVE_NAME="${BACKUP_NAME_PREFIX}.$(date +"%Y-%m-%dT%H:%M:%SZ").gz"
+BACKUP_DIR='/backups'
+
+mkdir -p ${BACKUP_DIR}
+
+if [ -f "${BACKUP_DIR}/restore_in_progress" ]; then
+   echo "Restore in progress... exiting"
+   exit 0
+fi
 
 # comparison is performed without regard to the case of alphabetic characters
 shopt -s nocasematch
@@ -138,8 +153,8 @@ echo "Latest backup is $BACKUP_DIR/$ARCHIVE_NAME"
 
 cd $BACKUP_DIR
 #Only delete the old archive after a successful backup
-export DAYS_TO_KEEP_BACKUP=$(echo $DAYS_TO_KEEP_BACKUP | sed 's/"//g')
-if [[ "$DAYS_TO_KEEP_BACKUP" -gt 0 ]]; then
+export BACKUP_RETAIN_DAYS=$(echo $BACKUP_RETAIN_DAYS | sed 's/"//g')
+if [[ "$BACKUP_RETAIN_DAYS" -gt 0 ]]; then
     create_hash_table $(ls -1 ${BACKUP_DIR}/BACKUP_NAME_PREFIX*.gz)
     remove_old_local_archives
 
