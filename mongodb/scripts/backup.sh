@@ -1,4 +1,5 @@
 #!/bin/bash
+set -ex
 BACKUP_NAME_PREFIX=mongodbdump
 ARCHIVE_NAME="${BACKUP_NAME_PREFIX}.$(date +%Y%m%d-%H%M%S).gz"
 BACKUP_DIR='/backups'
@@ -115,6 +116,7 @@ if [[ -z "$BACKUP_DB" ]]; then
 fi
 
 echo "Backup in progress..."
+set +x
 mongodump $OPLOG_FLAG $COLLECTION_OPTION $DATABASE_OPTION \
     -u $BACKUP_USER \
     -p $BACKUP_PASSWORD \
@@ -122,7 +124,16 @@ mongodump $OPLOG_FLAG $COLLECTION_OPTION $DATABASE_OPTION \
 	--archive="$BACKUP_DIR/$ARCHIVE_NAME" \
 	--gzip \
 	--uri "$MONGODB_URI"
-echo "Backup success!"
+set -x
+
+if [[ $? -eq 0 && -s $BACKUP_DIR/$ARCHIVE_NAME ]]
+then
+    log INFO "Backup success."
+else
+    log ERROR "Backup failed and need attention."
+    exit 1
+fi
+
 echo "Latest backup is $BACKUP_DIR/$ARCHIVE_NAME"
 
 cd $BACKUP_DIR

@@ -22,8 +22,8 @@ args: {
     hiddenExtraFlargs: ""
     // App installed namespace. NOTE(joseb): before fieldRef is supported,
     appNamespace: "mongo"
-	// Backup Schedule
-	backupSchedule: ""
+    // Backup Schedule
+    backupSchedule: ""
     // Specify to use oplog for taking a point-in-time snapshot
     ptrBackup: false
     // Collection name to backup
@@ -32,12 +32,17 @@ args: {
     backupDB: ""
     // Backup name to restore
     backupToRestore: ""
+    imageName: "bitnami/mongodb:5.0.12"
 }
 
 profiles: {
+    dev: {
+        backupSchedule:    "*/3 * * * *"
+        isReplicaSet: false
+        arbiterEnabled: false
+    }
     prod: {
-		backupSchedule:    "* * * * *"
-        backupToRestore: "test"
+        backupSchedule:    "*/30 * * * *"
         isReplicaSet: true
         arbiterEnabled: true
         replicas: 3
@@ -47,19 +52,23 @@ profiles: {
 
 localData: {
     if args.isReplicaSet {
-        mongodbURI: std.join([for i in std.range(args.replicas) {"mongodb-\(i).\(args.appNamespace).svc.cluster.local:27017"}], ",")
+        mongodbServerList: std.join([for i in std.range(args.replicas) {"mongodb-\(i).\(args.appNamespace).svc.cluster.local:27017"}], ",")
+    }
+    if !args.isReplicaSet {
+        mongodbServerList: "mongodb-0.\(args.appNamespace).svc.cluster.local:27017"
     }
 }
 
+// Standalone instance
 if !args.isReplicaSet {
     containers: {
         "mongodb-0": {
-            image: "bitnami/mongodb:6.0.1-debian-11-r1"
+            image: "\(args.imageName)"
             ports: {
                 expose: "27017:27017"
             }
             env: {
-                "": "27017"
+                "MONGODB_PORT_NUMBER": "27017"
                 "ALLOW_EMPTY_PASSWORD":               "\(!args.authEnabled)"
                 "MONGODB_USERNAME": "secret://db-user-credentials/username?onchange=no-action"
                 "MONGODB_DATABASE": "\(args.dbName)"
@@ -115,11 +124,12 @@ if !args.isReplicaSet {
     }
 }
 
+// Replicaset instance
 if args.isReplicaSet {
     for i in std.range(args.replicas) {
         containers: {
             "mongodb-\(i)": {
-                image: "bitnami/mongodb:6.0.1-debian-11-r1"
+                image: "\(args.imageName)"
                 ports: {
                     expose: "27017:27017"
                 }
@@ -130,7 +140,7 @@ if args.isReplicaSet {
                     "MONGODB_ADVERTISED_HOSTNAME": "mongodb-\(i).\(args.appNamespace).svc.cluster.local"
                     "MONGODB_PORT_NUMBER": "27017"
                     "MY_POD_INDEX": "\(i)"
-                    "MONGODB_URI": "\(localData.mongodbURI)"
+                    "MONGODB_SERVER_LIST": "\(localData.mongodbServerList)"
                     "ALLOW_EMPTY_PASSWORD":               "\(!args.authEnabled)"
                     "MONGODB_USERNAME": "secret://db-user-credentials/username?onchange=no-action"
                     "MONGODB_DATABASE": "\(args.dbName)"
@@ -191,10 +201,11 @@ if args.isReplicaSet {
     }
 }
 
+// Arbiter
 if args.isReplicaSet && args.arbiterEnabled {
     containers: {
         "arbiter-0": {
-            image: "bitnami/mongodb:6.0.1-debian-11-r1"
+            image: "\(args.imageName)"
             ports: {
                 expose: "27017:27017"
             }
@@ -219,25 +230,25 @@ if args.isReplicaSet && args.arbiterEnabled {
                 args: ["infinity"]
             }
             if !args.diagnosticMode {
-				probes: [
-					{
-						type:                "liveness"
-						initialDelaySeconds: 30
-						periodSeconds:       20
-						timeoutSeconds:      10
-						successThreshold:    1
-						failureThreshold:    6
+                probes: [
+                    {
+                        type:                "liveness"
+                        initialDelaySeconds: 30
+                        periodSeconds:       20
+                        timeoutSeconds:      10
+                        successThreshold:    1
+                        failureThreshold:    6
                         tcp: {
                             url: "tcp://localhost:27017"
                         }
-					},
-					{
-						type:                "readiness"
-						initialDelaySeconds: 5
-						periodSeconds:       20
-						timeoutSeconds:      10
-						successThreshold:    1
-						failureThreshold:    6
+                    },
+                    {
+                        type:                "readiness"
+                        initialDelaySeconds: 5
+                        periodSeconds:       20
+                        timeoutSeconds:      10
+                        successThreshold:    1
+                        failureThreshold:    6
                         tcp: {
                             url: "tcp://localhost:27017"
                         }
@@ -248,11 +259,12 @@ if args.isReplicaSet && args.arbiterEnabled {
     }
 }
 
-if args.isReplicaSet && args.hiddenReplicas > 0 {   
+// Hidden nodes
+if args.isReplicaSet && args.hiddenReplicas > 0 {
     for i in std.range(args.hiddenReplicas) {
         containers: {
             "hidden-\(i)": {
-                image: "bitnami/mongodb:6.0.1-debian-11-r1"
+                image: "\(args.imageName)"
                 ports: {
                     expose: "27017:27017"
                 }
@@ -321,64 +333,89 @@ if args.isReplicaSet && args.hiddenReplicas > 0 {
     }
 }
 
-if args.backupSchedule != "" {
-	jobs: {
-		"backup": {
-            image: "bitnami/mongodb:6.0.1-debian-11-r1"
-			command: ["/acorn/scripts/backup.sh"]
-			dirs: {
-				"/bitnami/mongodb": "volume://mongodb-data-0"
-				"/backups":       "volume://mongodb-backup"
+// Job to create a backup user
+if args.backupSchedule != "" || args.backupToRestore != "" {
+    jobs: {
+        "create-backup-user": {
+            image: "\(args.imageName)"
+            command: ["/acorn/scripts/create_backup_user.sh"]
+            dirs: {
                 "/acorn/scripts": "./scripts"
-			}
-			env: {
-                "PTR_BACKUP": "\(args.ptrBackup)"
-				"MONGODB_URI": "\(localData.mongodbURI)"
-				"BACKUP_USER": "secret://backup-user-credentials/user"
-				"BACKUP_PASSWORD": "secret://backup-user-credentials/password"
-                "BACKUP_DB": "\(args.backupDB)"
-                "BACKUP_COLLECTION": "\(args.backupCollection)"
-			}
-			schedule: args.backupSchedule
-			depends_on: "mongodb-0"
-		}
-	}
-	secrets: {
-		"backup-list": {
-			type: "generated"
-			params: {
-				job: "backup"
-			}
-		}
-	}
+            }
+            env: {
+                "MONGODB_SERVER_LIST": "\(localData.mongodbServerList)"
+                "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
+                if args.authEnabled {
+                    "MONGODB_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
+                    "MONGODB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
+                }
+                "BACKUP_USER": "secret://backup-user-credentials/username"
+                "BACKUP_PASSWORD": "secret://backup-user-credentials/password"
+            }
+            dependsOn: "mongodb-0"
+        }
+    }
 }
 
-if args.backupToRestore != "" {
-	jobs: {
-		"restore-from-backup": {
-			image: "bitnami/mongodb:6.0.1-debian-11-r1"
-			dirs: {
-				"/bitnami/mongodb": "volume://mongodb-data-0"
-				"/backups":       "volume://mongodb-backup"
+// Backup job
+if args.backupSchedule != "" {
+    jobs: {
+        "backup": {
+            image: "\(args.imageName)"
+            command: ["/acorn/scripts/backup.sh"]
+            dirs: {
+                "/backups":       "volume://mongodb-backup"
                 "/acorn/scripts": "./scripts"
-			}
-			env: {
+            }
+            env: {
                 "PTR_BACKUP": "\(args.ptrBackup)"
-				"MONGODB_URI": "\(localData.mongodbURI)"
-				"BACKUP_USER": "secret://backup-user-credentials/user"
-				"BACKUP_PASSWORD": "secret://backup-user-credentials/password"
+                "MONGODB_URI": "mongodb://\(localData.mongodbServerList)"
+                "BACKUP_USER": "secret://backup-user-credentials/username"
+                "BACKUP_PASSWORD": "secret://backup-user-credentials/password"
+                "BACKUP_DB": "\(args.backupDB)"
+                "BACKUP_COLLECTION": "\(args.backupCollection)"
+            }
+            schedule: args.backupSchedule
+            dependsOn: ["mongodb-0", "create-backup-user"]
+        }
+    }
+    secrets: {
+        "backup-list": {
+            type: "generated"
+            params: {
+                job: "backup"
+            }
+        }
+    }
+}
+
+// Restore job from a specified backup
+if args.backupToRestore != "" {
+    jobs: {
+        "restore-from-backup": {
+            image: "\(args.imageName)"
+            dirs: {
+                "/backups":       "volume://mongodb-backup"
+                "/acorn/scripts": "./scripts"
+            }
+            env: {
+                "PTR_BACKUP": "\(args.ptrBackup)"
+                "MONGODB_URI": "mongodb://\(localData.mongodbServerList)"
+                "BACKUP_USER": "secret://backup-user-credentials/username"
+                "BACKUP_PASSWORD": "secret://backup-user-credentials/password"
                 "RESTORE_DB": "\(args.backupDB)"
                 "RESTORE_COLLECTION": "\(args.backupCollection)"
-			}
-			command: ["/acorn/scripts/restore.sh"]
-		}
-	}
+            }
+            command: ["/acorn/scripts/restore.sh"]
+            dependsOn: ["mongodb-0", "create-backup-user"]
+        }
+    }
 }
 
 if args.backupSchedule != "" || args.backupToRestore != "" {
-	volumes: {
-		"mongodb-backup": {}
-	}
+    volumes: {
+        "mongodb-backup": {}
+    }
 }
 
 secrets: {
@@ -396,13 +433,13 @@ secrets: {
             password: ""
         }
     }
-	"backup-user-credentials": {
-		type: "basic"
-		data: {
-			username: "mariabackup"
-			password: ""
-		}
-	}
+    "backup-user-credentials": {
+        type: "basic"
+        data: {
+            username: "mongodbackup"
+            password: ""
+        }
+    }
     if args.isReplicaSet {
         "replicaset-key-token": {
             type: "token"
