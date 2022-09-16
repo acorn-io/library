@@ -1,7 +1,5 @@
 args: {
 	// The user credentials to be set
-	postgresPassword: "admin"
-
 	postgresUser: "admin"
 
 	postgresDb: "acorn"
@@ -48,7 +46,6 @@ secrets: {
 	"root-credentials": {
 		type: "basic"
 		data: {
-			password: "\(args.postgresPassword)"
 			username: "\(args.postgresUser)"
 		}
 	}
