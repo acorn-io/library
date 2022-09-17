@@ -40,16 +40,14 @@ args: {
 
 profiles: {
     dev: {
-        backupSchedule:    "*/3 * * * *"
-        isReplicaSet: false
-        arbiterEnabled: false
+        backupSchedule:    "*/30 * * * *"
+        // backupToRestore:    "mongodbdump.2022-09-17T13:00:04Z.gz"
     }
     prod: {
         backupSchedule:    "*/30 * * * *"
         isReplicaSet: true
         arbiterEnabled: true
         replicas: 3
-        ptrBackup: true
     }
 }
 
@@ -336,8 +334,8 @@ if args.isReplicaSet && args.hiddenReplicas > 0 {
     }
 }
 
-// Job to create a backup user
-if args.backupSchedule != "" || args.backupToRestore != "" {
+// Backup job
+if args.backupSchedule != "" {
     jobs: {
         "create-backup-user": {
             image: "bitnami/mongodb:\(args.dbVersion)"
@@ -357,12 +355,6 @@ if args.backupSchedule != "" || args.backupToRestore != "" {
             }
             dependsOn: "mongodb-0"
         }
-    }
-}
-
-// Backup job
-if args.backupSchedule != "" {
-    jobs: {
         "backup": {
             image: "bitnami/mongodb:\(args.dbVersion)"
             command: ["/acorn/scripts/backup.sh"]
@@ -396,6 +388,24 @@ if args.backupSchedule != "" {
 // Restore job from a specified backup
 if args.backupToRestore != "" {
     jobs: {
+        "create-restore-user": {
+            image: "bitnami/mongodb:\(args.dbVersion)"
+            command: ["/acorn/scripts/create_restore_user.sh"]
+            dirs: {
+                "/acorn/scripts": "./scripts"
+            }
+            env: {
+                "MONGODB_SERVER_LIST": "\(localData.mongodbServerList)"
+                "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
+                if args.authEnabled {
+                    "MONGODB_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
+                    "MONGODB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
+                }
+                "RESTORE_USER": "secret://restore-user-credentials/username"
+                "RESTORE_PASSWORD": "secret://restore-user-credentials/password"
+            }
+            dependsOn: "mongodb-0"
+        }
         "restore-from-backup": {
             image: "bitnami/mongodb:\(args.dbVersion)"
             dirs: {
@@ -405,13 +415,14 @@ if args.backupToRestore != "" {
             env: {
                 "PTR_BACKUP": "\(args.ptrBackup)"
                 "MONGODB_URI": "mongodb://\(localData.mongodbServerList)"
-                "BACKUP_USER": "secret://backup-user-credentials/username"
-                "BACKUP_PASSWORD": "secret://backup-user-credentials/password"
+                "RESTORE_USER": "secret://restore-user-credentials/username"
+                "RESTORE_PASSWORD": "secret://restore-user-credentials/password"
                 "RESTORE_DB": "\(args.backupDB)"
                 "RESTORE_COLLECTION": "\(args.backupCollection)"
+                "BACKUP_FILENAME": "\(args.backupToRestore)"
             }
             command: ["/acorn/scripts/restore.sh"]
-            dependsOn: ["mongodb-0", "create-backup-user"]
+            dependsOn: ["mongodb-0", "create-restore-user"]
         }
     }
 }
@@ -440,7 +451,14 @@ secrets: {
     "backup-user-credentials": {
         type: "basic"
         data: {
-            username: "mongodbackup"
+            username: "mongodbbackup"
+            password: ""
+        }
+    }
+    "restore-user-credentials": {
+        type: "basic"
+        data: {
+            username: "mongodbrestore"
             password: ""
         }
     }

@@ -6,7 +6,7 @@ if [ ! -f "${BACKUP_TO_RESTORE}" ]; then
 	exit 1
 fi
 
-echo "Hold restore lock"
+echo "Locking backup volume to restore ${BACKUP_FILENAME}..."
 touch ${BACKUP_DIR}/restore_in_progress
 
 # comparison is performed without regard to the case of alphabetic characters
@@ -28,13 +28,13 @@ fi
 
 echo "Restoring..."
 mongorestore $OPLOG_FLAG $COLLECTION_OPTION $DATABASE_OPTION \
-    -u $BACKUP_USER \
-    -p $BACKUP_PASSWORD \
+    -u $RESTORE_USER \
+    -p $RESTORE_PASSWORD \
     --authenticationDatabase admin \
 	--archive="$BACKUP_TO_RESTORE" \
 	--gzip \
 	--uri "$MONGODB_URI"
 
-echo "Release restore lock"
+echo "Unlock backup volume."
 rm ${BACKUP_DIR}/restore_in_progress
 echo "Restore success!"
