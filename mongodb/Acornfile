@@ -54,9 +54,11 @@ profiles: {
 localData: {
     if args.isReplicaSet {
         mongodbServerList: std.join([for i in std.range(args.replicas) {"mongodb-\(i).\(args.appNamespace).svc.cluster.local:27017"}], ",")
+        mongodbDependsOn: [ for i in std.range(args.replicas) {"mongodb-\(i)"}]
     }
     if !args.isReplicaSet {
         mongodbServerList: "mongodb-0.\(args.appNamespace).svc.cluster.local:27017"
+        mongodbDependsOn: ["mongodb-0"]
     }
 }
 
@@ -155,7 +157,9 @@ if args.isReplicaSet {
                         "MONGODB_EXTRA_FLAGS": "\(args.extraFlags)"
                     }
                 }
-                dependsOn: [ for i in std.range(i) {"mongodb-\(i)"}]
+                if i != 0 {
+                    dependsOn: "mongodb-\(i-1)"
+                }
                 if args.diagnosticMode {
                     command: ["sleep"]
                     args: ["infinity"]
@@ -353,7 +357,7 @@ if args.backupSchedule != "" {
                 "BACKUP_USER": "secret://backup-user-credentials/username"
                 "BACKUP_PASSWORD": "secret://backup-user-credentials/password"
             }
-            dependsOn: "mongodb-0"
+            dependsOn: localData.mongodbDependsOn
         }
         "backup": {
             image: "bitnami/mongodb:\(args.dbVersion)"
@@ -372,7 +376,7 @@ if args.backupSchedule != "" {
                 "BACKUP_RETAIN_DAYS": "\(args.backupRetainDays)"
             }
             schedule: args.backupSchedule
-            dependsOn: ["mongodb-0", "create-backup-user"]
+            dependsOn: ["create-backup-user"]
         }
     }
     secrets: {
@@ -404,7 +408,7 @@ if args.backupToRestore != "" {
                 "RESTORE_USER": "secret://restore-user-credentials/username"
                 "RESTORE_PASSWORD": "secret://restore-user-credentials/password"
             }
-            dependsOn: "mongodb-0"
+            dependsOn: localData.mongodbDependsOn
         }
         "restore-from-backup": {
             image: "bitnami/mongodb:\(args.dbVersion)"
@@ -422,7 +426,7 @@ if args.backupToRestore != "" {
                 "BACKUP_FILENAME": "\(args.backupToRestore)"
             }
             command: ["/acorn/scripts/restore.sh"]
-            dependsOn: ["mongodb-0", "create-restore-user"]
+            dependsOn: ["create-restore-user"]
         }
     }
 }
