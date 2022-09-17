@@ -1,5 +1,5 @@
 #!/bin/bash
-set -ex
+set -x
 
 # Log message to a file or stdout
 # Params: $1 log level
@@ -53,7 +53,7 @@ function seconds_difference() {
 # +------------+---------------------------------------------------------------------------------------------------------+
 # | 6253434567 | "/backups/mongodbdump.20220201101313.tar.gz"                                                            |
 # +------------+---------------------------------------------------------------------------------------------------------+
-# We will use the explained above data stracture to cover rare, but still
+# We will use the explained above data structure to cover rare, but still
 # possible case, when we have several backups of the same date. E.g.
 # one manual, and one automatic.
 declare -A fileTable
@@ -95,68 +95,73 @@ function remove_old_local_archives() {
             rm -f ${ARCHIVE_FILE}
             if [[ $? -ne 0 ]]; then
                 # Log error but don't exit so we can finish the script
-                # because at this point we haven't sent backup to RGW yet
                 log ERROR "mongodb_backup" "Failed to cleanup old backup. Cannot remove some of ${ARCHIVE_FILE}"
+                exit 1
             fi
         fi
     done
 }
 
-BACKUP_NAME_PREFIX=mongodbdump
-ARCHIVE_NAME="${BACKUP_NAME_PREFIX}.$(date +"%Y-%m-%dT%H:%M:%SZ").gz"
-BACKUP_DIR='/backups'
+# Backup database
+function backup_database() {
+    ARCHIVE_NAME="${BACKUP_NAME_PREFIX}.$(date +"%Y-%m-%dT%H:%M:%SZ").gz"
 
+    if [ -f "${BACKUP_DIR}/restore_in_progress" ]; then
+    echo "Restore in progress... exiting"
+    exit 0
+    fi
+
+    # comparison is performed without regard to the case of alphabetic characters
+    shopt -s nocasematch
+    OPLOG_FLAG=""
+    if [[ "$PTR_BACKUP" = 1 || "$PTR_BACKUP" =~ ^(yes|true)$ ]]; then
+        OPLOG_FLAG="--oplog"
+    fi
+
+    COLLECTION_OPTION=""
+    if [[ -z "$BACKUP_COLLECTION" ]]; then
+        COLLECTION_OPTION="--collection=$BACKUP_COLLECTION"
+    fi
+
+    DATABASE_OPTION=""
+    if [[ -z "$BACKUP_DB" ]]; then
+        DATABASE_OPTION="--db=$BACKUP_DB"
+    fi
+
+    echo "Backup in progress..."
+    set +x
+    mongodump $OPLOG_FLAG $COLLECTION_OPTION $DATABASE_OPTION \
+        -u $BACKUP_USER \
+        -p $BACKUP_PASSWORD \
+        --authenticationDatabase admin \
+        --archive="$BACKUP_DIR/$ARCHIVE_NAME" \
+        --gzip \
+        --uri "$MONGODB_URI"
+    set -x
+
+    if [[ $? -eq 0 && -s $BACKUP_DIR/$ARCHIVE_NAME ]]
+    then
+        log INFO "Backup success."
+    else
+        log ERROR "Backup failed and need attention."
+        exit 1
+    fi
+    echo "Latest backup is $BACKUP_DIR/$ARCHIVE_NAME"
+}
+
+BACKUP_DIR='/backups'
+BACKUP_NAME_PREFIX=mongodbdump
 mkdir -p ${BACKUP_DIR}
 
-if [ -f "${BACKUP_DIR}/restore_in_progress" ]; then
-   echo "Restore in progress... exiting"
-   exit 0
-fi
+# 1. Backup database
+backup_database
 
-# comparison is performed without regard to the case of alphabetic characters
-shopt -s nocasematch
-OPLOG_FLAG=""
-if [[ "$PTR_BACKUP" = 1 || "$PTR_BACKUP" =~ ^(yes|true)$ ]]; then
-    OPLOG_FLAG="--oplog"
-fi
-
-COLLECTION_OPTION=""
-if [[ -z "$BACKUP_COLLECTION" ]]; then
-    COLLECTION_OPTION="--collection=$BACKUP_COLLECTION"
-fi
-
-DATABASE_OPTION=""
-if [[ -z "$BACKUP_DB" ]]; then
-    DATABASE_OPTION="--db=$BACKUP_DB"
-fi
-
-echo "Backup in progress..."
-set +x
-mongodump $OPLOG_FLAG $COLLECTION_OPTION $DATABASE_OPTION \
-    -u $BACKUP_USER \
-    -p $BACKUP_PASSWORD \
-    --authenticationDatabase admin \
-	--archive="$BACKUP_DIR/$ARCHIVE_NAME" \
-	--gzip \
-	--uri "$MONGODB_URI"
-set -x
-
-if [[ $? -eq 0 && -s $BACKUP_DIR/$ARCHIVE_NAME ]]
-then
-    log INFO "Backup success."
-else
-    log ERROR "Backup failed and need attention."
-    exit 1
-fi
-
-echo "Latest backup is $BACKUP_DIR/$ARCHIVE_NAME"
-
-cd $BACKUP_DIR
-#Only delete the old archive after a successful backup
+# 2. Only delete the old archive after a successful backup
 export BACKUP_RETAIN_DAYS=$(echo $BACKUP_RETAIN_DAYS | sed 's/"//g')
 if [[ "$BACKUP_RETAIN_DAYS" -gt 0 ]]; then
-    create_hash_table $(ls -1 ${BACKUP_DIR}/BACKUP_NAME_PREFIX*.gz)
+    create_hash_table $(ls -1 ${BACKUP_DIR}/${BACKUP_NAME_PREFIX}*.gz)
     remove_old_local_archives
-
 fi
+
+# 3. Update backup list
 ls -lrt ${BACKUP_DIR}/ > /run/secrets/output
