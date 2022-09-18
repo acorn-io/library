@@ -15,6 +15,12 @@ args: {
 
 	// It can be used to define location for the database files
 	pgData: "/var/lib/postgresql/data"
+
+	// Backup Schedule
+	backupSchedule: "@hourly"
+
+	// Restore from Backup. Takes a backup file name
+	restoreFromBackup: ""
 }
 
 containers: {
@@ -38,6 +44,7 @@ containers: {
 		}
 		dirs: {
 			"\(args.pgData)": "volume://pgdata-0"
+			"/backup": "volume://backup"
 		}
 	}
 }
@@ -53,4 +60,24 @@ secrets: {
 
 volumes: {
 	"pgdata-0": {}
+	"backup": {}
+}
+
+if args.backupSchedule != "" {
+	jobs: {
+		"backup": {
+			image: "postgres:14.5-bullseye"
+			dirs: {
+				"/acorn/scripts": "./scripts"
+				"/backup": "volume://backup"
+			}
+			command: ["sh","/acorn/scripts/backup.sh"]
+			env: {
+				"POSTGRES_USER":     "secret://root-credentials/username"
+				"POSTGRES_PASSWORD": "secret://root-credentials/password"
+				"POSTGRES_DB": "\(args.postgresDb)"
+			}
+			schedule: "@hourly"
+		}
+	}
 }

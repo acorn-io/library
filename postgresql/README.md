@@ -19,6 +19,10 @@ Where the _appname_ should be substituted with your application name. It will re
         NAME                     TYPE      KEY        VALUE
         root-credentials-ccrh4   basic     password   5h9bq4cl2gw5h5d2
         root-credentials-ccrh4   basic     username   admin
-        
 
-## Parameters
+
+## Available options
+
+## Making backup
+
+## Restoring backup
