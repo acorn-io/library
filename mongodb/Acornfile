@@ -5,18 +5,19 @@ args: {
     dbUserName: ""
     // Custom database to be created during the initialization
     dbName: "acorn"
+    // Number of secondary nodes
     replicas: 1
     // Enable diagnostic mode
     diagnosticMode: false
     // Enable authentication
     authEnabled: true
-    // Run arbiter node
     // Mongodb additional command line flags
     extraFlags: ""
+    // Run arbiter node
     arbiterEnabled: false
     // Arbiter additional command line flags
-    arbiterExtraFlargs: ""
-    // Run hidden node
+    arbiterExtraFlags: ""
+    // Number of hidden nodes
     hiddenReplicas: 1
     // Hidden node additional command line flags
     hiddenExtraFlargs: ""
@@ -40,11 +41,10 @@ args: {
 
 profiles: {
     dev: {
-        backupSchedule:    "*/30 * * * *"
-        // backupToRestore:    "mongodbdump.2022-09-17T13:00:04Z.gz"
+        backupSchedule: "*/30 * * * *"
     }
     prod: {
-        backupSchedule:    "*/30 * * * *"
+        backupSchedule: "*/30 * * * *"
         isReplicaSet: true
         arbiterEnabled: true
         replicas: 3
@@ -72,7 +72,7 @@ if !args.isReplicaSet {
             }
             env: {
                 "MONGODB_PORT_NUMBER": "27017"
-                "ALLOW_EMPTY_PASSWORD":               "\(!args.authEnabled)"
+                "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
                 "MONGODB_USERNAME": "secret://db-user-credentials/username?onchange=no-action"
                 "MONGODB_DATABASE": "\(args.dbName)"
                 if args.authEnabled {
@@ -138,13 +138,13 @@ if args.isReplicaSet {
                 }
                 env: {
                     "MY_POD_NAMESPACE": "\(args.appNamespace)"
-                    "MONGODB_INITIAL_PRIMARY_HOST":  "mongodb-0.\(args.appNamespace).svc.cluster.local"
-                    "MONGODB_REPLICA_SET_NAME":      "rs0"
+                    "MONGODB_INITIAL_PRIMARY_HOST": "mongodb-0.\(args.appNamespace).svc.cluster.local"
+                    "MONGODB_REPLICA_SET_NAME": "rs0"
                     "MONGODB_ADVERTISED_HOSTNAME": "mongodb-\(i).\(args.appNamespace).svc.cluster.local"
                     "MONGODB_PORT_NUMBER": "27017"
                     "MY_POD_INDEX": "\(i)"
                     "MONGODB_SERVER_LIST": "\(localData.mongodbServerList)"
-                    "ALLOW_EMPTY_PASSWORD":               "\(!args.authEnabled)"
+                    "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
                     "MONGODB_USERNAME": "secret://db-user-credentials/username?onchange=no-action"
                     "MONGODB_DATABASE": "\(args.dbName)"
                     if args.authEnabled {
@@ -217,17 +217,17 @@ if args.isReplicaSet && args.arbiterEnabled {
             env: {
                 "MY_POD_NAMESPACE": "\(args.appNamespace)"
                 "MONGODB_REPLICA_SET_MODE": "arbiter"
-                "MONGODB_INITIAL_PRIMARY_HOST":  "mongodb-0.\(args.appNamespace).svc.cluster.local"
-                "MONGODB_REPLICA_SET_NAME":      "rs0"
+                "MONGODB_INITIAL_PRIMARY_HOST": "mongodb-0.\(args.appNamespace).svc.cluster.local"
+                "MONGODB_REPLICA_SET_NAME": "rs0"
                 "MONGODB_ADVERTISED_HOSTNAME": "arbiter-0.\(args.appNamespace).svc.cluster.local"
-                "ALLOW_EMPTY_PASSWORD":               "\(!args.authEnabled)"
+                "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
                 if args.authEnabled {
                     "MONGODB_INITIAL_PRIMARY_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
                     "MONGODB_INITIAL_PRIMARY_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
                     "MONGODB_REPLICA_SET_KEY": "secret://replicaset-key/key?onchange=no-action"
                 }
-                if args.arbiterExtraFlargs != "" {
-                    "MONGODB_EXTRA_FLAGS": "\(args.arbiterExtraFlargs)"
+                if args.arbiterExtraFlags != "" {
+                    "MONGODB_EXTRA_FLAGS": "\(args.arbiterExtraFlags)"
                 }
             }
             if args.diagnosticMode {
@@ -276,10 +276,10 @@ if args.isReplicaSet && args.hiddenReplicas > 0 {
                 env: {
                     "MY_POD_NAMESPACE": "\(args.appNamespace)"
                     "MONGODB_REPLICA_SET_MODE": "hidden"
-                    "MONGODB_INITIAL_PRIMARY_HOST":  "mongodb-0.\(args.appNamespace).svc.cluster.local"
-                    "MONGODB_REPLICA_SET_NAME":      "rs0"
+                    "MONGODB_INITIAL_PRIMARY_HOST": "mongodb-0.\(args.appNamespace).svc.cluster.local"
+                    "MONGODB_REPLICA_SET_NAME": "rs0"
                     "MONGODB_ADVERTISED_HOSTNAME": "hidden-\(i).\(args.appNamespace).svc.cluster.local"
-                    "ALLOW_EMPTY_PASSWORD":               "\(!args.authEnabled)"
+                    "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
                     "MONGODB_USERNAME": "secret://db-user-credentials/username?onchange=no-action"
                     "MONGODB_DATABASE": "secret://db-user-credentials/password?onchange=no-action"
                     if args.authEnabled {
@@ -363,7 +363,7 @@ if args.backupSchedule != "" {
             image: "bitnami/mongodb:\(args.dbVersion)"
             command: ["/acorn/scripts/backup.sh"]
             dirs: {
-                "/backups":       "volume://mongodb-backup"
+                "/backups": "volume://mongodb-backup"
                 "/acorn/scripts": "./scripts"
             }
             env: {
@@ -413,7 +413,7 @@ if args.backupToRestore != "" {
         "restore-from-backup": {
             image: "bitnami/mongodb:\(args.dbVersion)"
             dirs: {
-                "/backups":       "volume://mongodb-backup"
+                "/backups": "volume://mongodb-backup"
                 "/acorn/scripts": "./scripts"
             }
             env: {
