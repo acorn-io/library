@@ -39,6 +39,14 @@ args: {
     backupRetainDays: 5
     // Allow access from outside of k8s cluster
     externalAccessEnabled: false
+    // TLS certificate
+    tlsCertificate: ""
+    // TLS key
+    tlsKey: ""
+    // TLS CA
+    tlsCA: ""
+    // TLS mode (options: `allowTLS`, `preferTLS`, `requireTLS`)
+    tlsMode: "requireTLS"
 }
 
 profiles: {
@@ -55,6 +63,7 @@ profiles: {
 
 localData: {
     autoDiscovery: false
+    tlsEnabled: args.tlsCA != "" && args.tlsCertificate != "" && args.tlsKey != ""
     if args.isReplicaSet {
         mongodbServerList: std.join([for i in std.range(args.replicas) {"mongodb-\(i).\(args.appNamespace).svc.cluster.local:27017"}], ",")
         mongodbDependsOn: [ for i in std.range(args.replicas) {"mongodb-\(i)"}]
@@ -81,6 +90,7 @@ if !args.isReplicaSet {
             env: {
                 "MONGODB_PORT_NUMBER": "27017"
                 "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
+                "TLS_ENABLED": "\(localData.tlsEnabled)"
                 "MONGODB_USERNAME": "secret://db-user-credentials/username?onchange=no-action"
                 "MONGODB_DATABASE": "\(args.dbName)"
                 if args.authEnabled {
@@ -127,6 +137,10 @@ if !args.isReplicaSet {
             dirs: {
                 "/acorn/scripts": "./scripts"
                 "/bitnami/mongodb": "volume://mongodb-data-0"
+                if localData.tlsEnabled {
+                    "/certs/mongodb.pem": "secret://tls-certs/cert-key"
+                    "/certs/mongodb-cert": "secret://tls-certs/ca"
+                }
             }
         }
     }
@@ -180,16 +194,16 @@ if args.isReplicaSet {
                     "MY_POD_INDEX": "\(i)"
                     "MONGODB_SERVER_LIST": "\(localData.mongodbServerList)"
                     "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
+                    "TLS_ENABLED": "\(localData.tlsEnabled)"
                     "MONGODB_USERNAME": "secret://db-user-credentials/username?onchange=no-action"
                     "MONGODB_DATABASE": "\(args.dbName)"
+                    "MONGODB_EXTRA_FLAGS": "\(args.extraFlags)"
+                    "TLS_MODE": "\(args.tlsMode)"
                     if args.authEnabled {
                         "MONGODB_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
                         "MONGODB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
                         "MONGODB_PASSWORD": "secret://db-user-credentials/password?onchange=no-action"
                         "MONGODB_REPLICA_SET_KEY": "secret://replicaset-key/key?onchange=no-action"
-                    }
-                    if args.extraFlags != "" {
-                        "MONGODB_EXTRA_FLAGS": "\(args.extraFlags)"
                     }
                 }
                 if localData.autoDiscovery && args.externalAccessEnabled {
@@ -245,6 +259,10 @@ if args.isReplicaSet {
                 dirs: {
                     "/acorn/scripts": "./scripts"
                     "/bitnami/mongodb": "volume://mongodb-data-\(i)"
+                    if localData.tlsEnabled {
+                        "/certs/mongodb.pem": "secret://tls-certs/cert-key"
+                        "/certs/mongodb-cert": "secret://tls-certs/ca"
+                    }
                 }
             }
         }
@@ -269,12 +287,17 @@ if args.isReplicaSet && args.arbiterEnabled {
                 "MONGODB_REPLICA_SET_NAME": "rs0"
                 "MONGODB_ADVERTISED_HOSTNAME": "arbiter-0.\(args.appNamespace).svc.cluster.local"
                 "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
+                "TLS_ENABLED": "\(localData.tlsEnabled)"
                 if args.authEnabled {
                     "MONGODB_INITIAL_PRIMARY_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
                     "MONGODB_INITIAL_PRIMARY_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
                     "MONGODB_REPLICA_SET_KEY": "secret://replicaset-key/key?onchange=no-action"
                 }
-                if args.arbiterExtraFlags != "" {
+                if localData.tlsEnabled {
+                    "MONGODB_CLIENT_EXTRA_FLAGS": "--tls --tlsCertificateKeyFile=/certs/mongodb.pem --tlsCAFile=/certs/mongodb-cert"
+                    "MONGODB_EXTRA_FLAGS": "--tlsMode=\(args.tlsMode) --tlsCertificateKeyFile=/certs/mongodb.pem --tlsCAFile=/certs/mongodb-cert \(args.arbiterExtraFlags)"
+                }
+                if !localData.tlsEnabled {
                     "MONGODB_EXTRA_FLAGS": "\(args.arbiterExtraFlags)"
                 }
             }
@@ -308,6 +331,12 @@ if args.isReplicaSet && args.arbiterEnabled {
                     }
                 ]
             }
+            if localData.tlsEnabled {
+                dirs: {
+                    "/certs/mongodb.pem": "secret://tls-certs/cert-key"
+                    "/certs/mongodb-cert": "secret://tls-certs/ca"
+                }
+            }
         }
     }
 }
@@ -328,16 +357,16 @@ if args.isReplicaSet && args.hiddenReplicas > 0 {
                     "MONGODB_REPLICA_SET_NAME": "rs0"
                     "MONGODB_ADVERTISED_HOSTNAME": "hidden-\(i).\(args.appNamespace).svc.cluster.local"
                     "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
+                    "TLS_ENABLED": "\(localData.tlsEnabled)"
                     "MONGODB_USERNAME": "secret://db-user-credentials/username?onchange=no-action"
                     "MONGODB_DATABASE": "secret://db-user-credentials/password?onchange=no-action"
+                    "MONGODB_EXTRA_FLAGS": "\(args.hiddenExtraFlargs)"
+                    "TLS_MODE": "\(args.tlsMode)"
                     if args.authEnabled {
                         "MONGODB_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
                         "MONGODB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
                         "MONGODB_PASSWORD": "\(args.dbName)"
                         "MONGODB_REPLICA_SET_KEY": "secret://replicaset-key/key?onchange=no-action"
-                    }
-                    if args.hiddenExtraFlargs != "" {
-                        "MONGODB_EXTRA_FLAGS": "\(args.hiddenExtraFlargs)"
                     }
                 }
                 dependsOn: [ for i in std.range(args.replicas) {"mongodb-\(i)"}]
@@ -377,6 +406,10 @@ if args.isReplicaSet && args.hiddenReplicas > 0 {
                 dirs: {
                     "/acorn/scripts": "./scripts"
                     "/bitnami/mongodb": "volume://hidden-data-\(i)"
+                    if localData.tlsEnabled {
+                        "/certs/mongodb.pem": "secret://tls-certs/cert-key"
+                        "/certs/mongodb-cert": "secret://tls-certs/ca"
+                    }
                 }
             }
         }
@@ -394,10 +427,15 @@ if args.backupSchedule != "" {
             command: ["/acorn/scripts/create_backup_user.sh"]
             dirs: {
                 "/acorn/scripts": "./scripts"
+                if localData.tlsEnabled {
+                    "/certs/mongodb.pem": "secret://tls-certs/cert-key"
+                    "/certs/mongodb-cert": "secret://tls-certs/ca"
+                }
             }
             env: {
                 "MONGODB_SERVER_LIST": "\(localData.mongodbServerList)"
                 "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
+                "TLS_ENABLED": "\(localData.tlsEnabled)"
                 if args.authEnabled {
                     "MONGODB_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
                     "MONGODB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
@@ -413,8 +451,13 @@ if args.backupSchedule != "" {
             dirs: {
                 "/backups": "volume://mongodb-backup"
                 "/acorn/scripts": "./scripts"
+                if localData.tlsEnabled {
+                    "/certs/mongodb.pem": "secret://tls-certs/cert-key"
+                    "/certs/mongodb-cert": "secret://tls-certs/ca"
+                }
             }
             env: {
+                "TLS_ENABLED": "\(localData.tlsEnabled)"
                 "PTR_BACKUP": "\(args.ptrBackup)"
                 "MONGODB_URI": "mongodb://\(localData.mongodbServerList)"
                 "BACKUP_USER": "secret://backup-user-credentials/username"
@@ -445,10 +488,15 @@ if args.backupToRestore != "" {
             command: ["/acorn/scripts/create_restore_user.sh"]
             dirs: {
                 "/acorn/scripts": "./scripts"
+                if localData.tlsEnabled {
+                    "/certs/mongodb.pem": "secret://tls-certs/cert-key"
+                    "/certs/mongodb-cert": "secret://tls-certs/ca"
+                }
             }
             env: {
                 "MONGODB_SERVER_LIST": "\(localData.mongodbServerList)"
                 "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
+                "TLS_ENABLED": "\(localData.tlsEnabled)"
                 if args.authEnabled {
                     "MONGODB_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
                     "MONGODB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
@@ -463,8 +511,13 @@ if args.backupToRestore != "" {
             dirs: {
                 "/backups": "volume://mongodb-backup"
                 "/acorn/scripts": "./scripts"
+                if localData.tlsEnabled {
+                    "/certs/mongodb.pem": "secret://tls-certs/cert-key"
+                    "/certs/mongodb-cert": "secret://tls-certs/ca"
+                }
             }
             env: {
+                "TLS_ENABLED": "\(localData.tlsEnabled)"
                 "PTR_BACKUP": "\(args.ptrBackup)"
                 "MONGODB_URI": "mongodb://\(localData.mongodbServerList)"
                 "RESTORE_USER": "secret://restore-user-credentials/username"
@@ -522,6 +575,15 @@ secrets: {
             type: "template"
             data: {
                 "key": "${secret://replicaset-key-token/token}"
+            }
+        }
+    }
+    if localData.tlsEnabled {
+        "tls-certs": {
+            type: "opaque"
+            data: {
+                "cert-key": "\(args.tlsCA)"
+                "ca": "\(args.tlsCertificate)\(args.tlsKey)"
             }
         }
     }

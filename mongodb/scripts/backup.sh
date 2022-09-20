@@ -128,9 +128,13 @@ function backup_database() {
         DATABASE_OPTION="--db=$BACKUP_DB"
     fi
 
+    if [[ "$TLS_ENABLED" = 1 || "$TLS_ENABLED" =~ ^(yes|true)$ ]]; then
+        TLS_OPTIONS='--ssl --sslPEMKeyFile=/certs/mongodb.pem --sslCAFile=/certs/mongodb-cert'
+    fi
+
     echo "Backup in progress..."
     set +x
-    mongodump $OPLOG_FLAG $COLLECTION_OPTION $DATABASE_OPTION \
+    mongodump $TLS_OPTIONS $OPLOG_FLAG $COLLECTION_OPTION $DATABASE_OPTION \
         -u $BACKUP_USER \
         -p $BACKUP_PASSWORD \
         --authenticationDatabase admin \

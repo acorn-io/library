@@ -12,6 +12,11 @@ if [[ "$EXTERNAL_ACCESS_ENABLED" = 1 || "$EXTERNAL_ACCESS_ENABLED" =~ ^(yes|true
     export MONGODB_ADVERTISED_HOSTNAME="$(<${SHARED_FILE})"
 fi
 
+if [[ "$TLS_ENABLED" = 1 || "$TLS_ENABLED" =~ ^(yes|true)$ ]]; then
+    export MONGODB_CLIENT_EXTRA_FLAGS="--tls --tlsCertificateKeyFile=/certs/mongodb.pem --tlsCAFile=/certs/mongodb-cert"
+    export MONGODB_EXTRA_FLAGS="--tlsMode=$TLS_MODE --tlsCertificateKeyFile=/certs/mongodb.pem --tlsCAFile=/certs/mongodb-cert $MONGODB_EXTRA_FLAGS"
+fi
+
 info "Advertised Hostname: $MONGODB_ADVERTISED_HOSTNAME"
 info "Advertised Port: $MONGODB_ADVERTISED_PORT_NUMBER"
 # Check for existing replica set in case there is no data in the PVC
@@ -20,7 +25,7 @@ info "Advertised Port: $MONGODB_ADVERTISED_PORT_NUMBER"
 current_primary=""
 if is_dir_empty "${MONGODB_DATA_DIR}/db"; then
     info "Data dir empty, checking if the replica set already exists"
-    current_primary=$(mongosh admin --host $MONGODB_SERVER_LIST --authenticationDatabase admin -u root -p $MONGODB_ROOT_PASSWORD --eval 'db.runCommand("ismaster")' | awk -F\' '/primary/ {print $2}')
+    current_primary=$(mongosh admin $MONGODB_CLIENT_EXTRA_FLAGS --host $MONGODB_SERVER_LIST --authenticationDatabase admin -u root -p $MONGODB_ROOT_PASSWORD --eval 'db.runCommand("ismaster")' | awk -F\' '/primary/ {print $2}')
     if ! is_empty_value "$current_primary"; then
     info "Detected existing primary: ${current_primary}"
     fi

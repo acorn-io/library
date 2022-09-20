@@ -26,8 +26,12 @@ if [[ -z "$RESTORE_DB" ]]; then
     DATABASE_OPTION="--db=$RESTORE_DB"
 fi
 
+if [[ "$TLS_ENABLED" = 1 || "$TLS_ENABLED" =~ ^(yes|true)$ ]]; then
+    TLS_OPTIONS='--ssl --sslPEMKeyFile=/certs/mongodb.pem --sslCAFile=/certs/mongodb-cert'
+fi
+
 echo "Restoring..."
-mongorestore $OPLOG_FLAG $COLLECTION_OPTION $DATABASE_OPTION \
+mongorestore $TLS_OPTIONS $OPLOG_FLAG $COLLECTION_OPTION $DATABASE_OPTION \
     -u $RESTORE_USER \
     -p $RESTORE_PASSWORD \
     --authenticationDatabase admin \

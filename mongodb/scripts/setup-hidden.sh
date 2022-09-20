@@ -3,6 +3,12 @@
 echo "Advertised Hostname: $MONGODB_ADVERTISED_HOSTNAME"
 echo "Advertised Port: $MONGODB_ADVERTISED_PORT_NUMBER"
 echo "Configuring node as a hidden node"
+
+if [[ "$TLS_ENABLED" = 1 || "$TLS_ENABLED" =~ ^(yes|true)$ ]]; then
+    export MONGODB_CLIENT_EXTRA_FLAGS="--tls --tlsCertificateKeyFile=/certs/mongodb.pem --tlsCAFile=/certs/mongodb-cert"
+    export MONGODB_EXTRA_FLAGS="--tlsMode=$TLS_MODE --tlsCertificateKeyFile=/certs/mongodb.pem --tlsCAFile=/certs/mongodb-cert $MONGODB_EXTRA_FLAGS"
+fi
+
 export MONGODB_REPLICA_SET_MODE="hidden"
 export MONGODB_INITIAL_PRIMARY_ROOT_USER="$MONGODB_ROOT_USER"
 export MONGODB_INITIAL_PRIMARY_ROOT_PASSWORD="$MONGODB_ROOT_PASSWORD"
