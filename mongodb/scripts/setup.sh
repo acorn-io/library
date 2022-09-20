@@ -6,6 +6,12 @@
 if is_empty_value "$MONGODB_ADVERTISED_PORT_NUMBER"; then
     export MONGODB_ADVERTISED_PORT_NUMBER="$MONGODB_PORT_NUMBER"
 fi
+shopt -s nocasematch
+if [[ "$EXTERNAL_ACCESS_ENABLED" = 1 || "$EXTERNAL_ACCESS_ENABLED" =~ ^(yes|true)$ ]]; then
+    SHARED_FILE="/tmp/shared/ip.txt"
+    export MONGODB_ADVERTISED_HOSTNAME="$(<${SHARED_FILE})"
+fi
+
 info "Advertised Hostname: $MONGODB_ADVERTISED_HOSTNAME"
 info "Advertised Port: $MONGODB_ADVERTISED_PORT_NUMBER"
 # Check for existing replica set in case there is no data in the PVC

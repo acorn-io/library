@@ -37,6 +37,8 @@ args: {
     dbVersion: "5.0.12"
     // Days to keep backup
     backupRetainDays: 5
+    // Allow access from outside of k8s cluster
+    externalAccessEnabled: false
 }
 
 profiles: {
@@ -52,6 +54,7 @@ profiles: {
 }
 
 localData: {
+    autoDiscovery: false
     if args.isReplicaSet {
         mongodbServerList: std.join([for i in std.range(args.replicas) {"mongodb-\(i).\(args.appNamespace).svc.cluster.local:27017"}], ",")
         mongodbDependsOn: [ for i in std.range(args.replicas) {"mongodb-\(i)"}]
@@ -68,7 +71,12 @@ if !args.isReplicaSet {
         "mongodb-0": {
             image: "bitnami/mongodb:\(args.dbVersion)"
             ports: {
-                expose: "27017:27017"
+                if args.externalAccessEnabled {
+                    publish: "27017:27017"
+                }
+                if !args.externalAccessEnabled {
+                    expose: "27017:27017"
+                }
             }
             env: {
                 "MONGODB_PORT_NUMBER": "27017"
@@ -130,14 +138,41 @@ if !args.isReplicaSet {
 // Replicaset instance
 if args.isReplicaSet {
     for i in std.range(args.replicas) {
+        if localData.autoDiscovery && args.externalAccessEnabled {
+            jobs: {
+                "mongodb-service-discovery-\(i)": {
+                    image: "bitnami/kubectl"
+                    command: ["/acorn/scripts/service_discovery.sh"]
+                    dirs: {
+                        "/acorn/scripts": "./scripts"
+                        "/tmp/shared": "volume://mongodb-service-discovery-\(i)"
+                    }
+                    env: {
+                        "MY_POD_NAMESPACE": "\(args.appNamespace)"
+                        "MY_POD_NAME": "mongodb-\(i)"
+                    }
+                }
+            }
+            volumes: {
+                "mongodb-service-discovery-\(i)": {
+                    size: "10m"
+                }
+            }
+        }
         containers: {
             "mongodb-\(i)": {
                 image: "bitnami/mongodb:\(args.dbVersion)"
                 ports: {
-                    expose: "27017:27017"
+                    if args.externalAccessEnabled {
+                        publish: "27017:27017"
+                    }
+                    if !args.externalAccessEnabled {
+                        expose: "27017:27017"
+                    }
                 }
                 env: {
                     "MY_POD_NAMESPACE": "\(args.appNamespace)"
+                    "EXTERNAL_ACCESS_ENABLED": "\(localData.autoDiscovery && args.externalAccessEnabled)"
                     "MONGODB_INITIAL_PRIMARY_HOST": "mongodb-0.\(args.appNamespace).svc.cluster.local"
                     "MONGODB_REPLICA_SET_NAME": "rs0"
                     "MONGODB_ADVERTISED_HOSTNAME": "mongodb-\(i).\(args.appNamespace).svc.cluster.local"
@@ -157,8 +192,21 @@ if args.isReplicaSet {
                         "MONGODB_EXTRA_FLAGS": "\(args.extraFlags)"
                     }
                 }
-                if i != 0 {
-                    dependsOn: "mongodb-\(i-1)"
+                if localData.autoDiscovery && args.externalAccessEnabled {
+                    if i != 0 {
+                        dependsOn: ["mongodb-\(i-1)", "mongodb-service-discovery-\(i)"]
+                    }
+                    if i == 0 {
+                        dependsOn: ["mongodb-service-discovery-0"]
+                    }
+                    dirs: {
+                        "/tmp/shared": "volume://mongodb-service-discovery-\(i)"
+                    }
+                }
+                if !(localData.autoDiscovery && args.externalAccessEnabled) {
+                    if i != 0 {
+                        dependsOn: "mongodb-\(i-1)"
+                    }
                 }
                 if args.diagnosticMode {
                     command: ["sleep"]
