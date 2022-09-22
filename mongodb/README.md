@@ -21,7 +21,7 @@ You can get the username and password of root user if needed from the generated 
 By default, this will start a standalone MongoDB instance on a 10GB volume from the default storage class. Do not use this deployment for production systems as it lacks replication and high availability. For all production deployments use replica sets.
 You can simply use `prod` profile.
 `acorn run [MONGODB_IMAGE] --profile prod`
-This will deploy a replica set with 3 secondary nodes, 1 hidden node, and 1 arbiter node. In addition, it enables scheduled backup every 30 minutes.
+This will deploy a replica set with 3 secondary nodes. In addition, it enables scheduled backup every 30 minutes.
 To learn more about replica sets deployment, see [Deploy a Replica Set](#deploy-a-replica-set).
 
 ## Available options
@@ -57,7 +57,7 @@ If you enabled replica set mode, that instance can be accessed via `mongodb-0,..
 
 If you would like to deploy a replica set instance, you have to set `--is-replicaset` as true.
 `acorn run [MONGODB_ACORN_IMAGE] --is-replicaset true`
-This will deploy one hidden node and one arbiter node as well as 3 secondary nodes.
+This will deploy a replica set with 3 secondary nodes.
 
 If you would like to deploy a replica set instance with more/fewer replicas and hidden nodes, you can specify replica numbers explicitly.
 `acorn run [MONGODB_ACORN_IMAGE] --is-replicaset true --replicas 5 --hidden-replicas 2`
@@ -132,13 +132,13 @@ Removing replicas should be done 1 at a time until the desired state is reached.
 
 ```shell
 acorn update [APP-NAME] --replicas 4
-mongosh admin --host $MONGODB_SERVER_LIST --authenticationDatabase admin -u root -p $MONGODB_ROOT_PASSWORD --eval 'rs.remove("mongodb-5.mongo.svc.cluster.local:27017")'
+mongosh admin --host $MONGODB_SERVER_LIST --authenticationDatabase admin -u root -p $MONGODB_ROOT_PASSWORD --eval 'rs.remove("mongodb-5:27017")'
 ```
 Before moving on, you should [verify](#how-to-check-replica-set-status) that the replica set is in a good state. If the replica set status is ok, scale down again to 3. If the replica set status is not what you expect, check the logs of all pods to determine if there is an issue.
 
 ```shell
 acorn update [APP-NAME] --replicas 3
-mongosh admin --host $MONGODB_SERVER_LIST --authenticationDatabase admin -u root -p $MONGODB_ROOT_PASSWORD --eval 'rs.remove("mongodb-4.mongo.svc.cluster.local:27017")'
+mongosh admin --host $MONGODB_SERVER_LIST --authenticationDatabase admin -u root -p $MONGODB_ROOT_PASSWORD --eval 'rs.remove("mongodb-4:27017")'
 ```
 
 Once the desired number of replicas is achieved and the replica set is in a good state, you can also clean up the volumes from the non-existent replicas.

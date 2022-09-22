@@ -6,7 +6,7 @@ args: {
     // Custom database to be created during the initialization
     dbName: "acorn"
     // Number of secondary nodes
-    replicas: 1
+    replicas: 3
     // Enable diagnostic mode
     diagnosticMode: false
     // Enable authentication
@@ -18,7 +18,7 @@ args: {
     // Arbiter additional command line flags
     arbiterExtraFlags: ""
     // Number of hidden nodes
-    hiddenReplicas: 1
+    hiddenReplicas: 0
     // Hidden node additional command line flags
     hiddenExtraFlargs: ""
     // App installed namespace. NOTE(joseb): before fieldRef is supported,
@@ -50,14 +50,9 @@ args: {
 }
 
 profiles: {
-    dev: {
-        backupSchedule: "*/30 * * * *"
-    }
     prod: {
         backupSchedule: "*/30 * * * *"
         isReplicaSet: true
-        arbiterEnabled: true
-        replicas: 3
     }
 }
 
@@ -65,11 +60,11 @@ localData: {
     autoDiscovery: false
     tlsEnabled: args.tlsCA != "" && args.tlsCertificate != "" && args.tlsKey != ""
     if args.isReplicaSet {
-        mongodbServerList: std.join([for i in std.range(args.replicas) {"mongodb-\(i).\(args.appNamespace).svc.cluster.local:27017"}], ",")
+        mongodbServerList: std.join([for i in std.range(args.replicas) {"mongodb-\(i):27017"}], ",")
         mongodbDependsOn: [ for i in std.range(args.replicas) {"mongodb-\(i)"}]
     }
     if !args.isReplicaSet {
-        mongodbServerList: "mongodb-0.\(args.appNamespace).svc.cluster.local:27017"
+        mongodbServerList: "mongodb-0:27017"
         mongodbDependsOn: ["mongodb-0"]
     }
 }
@@ -187,9 +182,9 @@ if args.isReplicaSet {
                 env: {
                     "MY_POD_NAMESPACE": "\(args.appNamespace)"
                     "EXTERNAL_ACCESS_ENABLED": "\(localData.autoDiscovery && args.externalAccessEnabled)"
-                    "MONGODB_INITIAL_PRIMARY_HOST": "mongodb-0.\(args.appNamespace).svc.cluster.local"
+                    "MONGODB_INITIAL_PRIMARY_HOST": "mongodb-0"
                     "MONGODB_REPLICA_SET_NAME": "rs0"
-                    "MONGODB_ADVERTISED_HOSTNAME": "mongodb-\(i).\(args.appNamespace).svc.cluster.local"
+                    "MONGODB_ADVERTISED_HOSTNAME": "mongodb-\(i)"
                     "MONGODB_PORT_NUMBER": "27017"
                     "MY_POD_INDEX": "\(i)"
                     "MONGODB_SERVER_LIST": "\(localData.mongodbServerList)"
@@ -283,9 +278,9 @@ if args.isReplicaSet && args.arbiterEnabled {
             env: {
                 "MY_POD_NAMESPACE": "\(args.appNamespace)"
                 "MONGODB_REPLICA_SET_MODE": "arbiter"
-                "MONGODB_INITIAL_PRIMARY_HOST": "mongodb-0.\(args.appNamespace).svc.cluster.local"
+                "MONGODB_INITIAL_PRIMARY_HOST": "mongodb-0"
                 "MONGODB_REPLICA_SET_NAME": "rs0"
-                "MONGODB_ADVERTISED_HOSTNAME": "arbiter-0.\(args.appNamespace).svc.cluster.local"
+                "MONGODB_ADVERTISED_HOSTNAME": "arbiter-0"
                 "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
                 "TLS_ENABLED": "\(localData.tlsEnabled)"
                 if args.authEnabled {
@@ -353,9 +348,9 @@ if args.isReplicaSet && args.hiddenReplicas > 0 {
                 env: {
                     "MY_POD_NAMESPACE": "\(args.appNamespace)"
                     "MONGODB_REPLICA_SET_MODE": "hidden"
-                    "MONGODB_INITIAL_PRIMARY_HOST": "mongodb-0.\(args.appNamespace).svc.cluster.local"
+                    "MONGODB_INITIAL_PRIMARY_HOST": "mongodb-0"
                     "MONGODB_REPLICA_SET_NAME": "rs0"
-                    "MONGODB_ADVERTISED_HOSTNAME": "hidden-\(i).\(args.appNamespace).svc.cluster.local"
+                    "MONGODB_ADVERTISED_HOSTNAME": "hidden-\(i)"
                     "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
                     "TLS_ENABLED": "\(localData.tlsEnabled)"
                     "MONGODB_USERNAME": "secret://db-user-credentials/username?onchange=no-action"
