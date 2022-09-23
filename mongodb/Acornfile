@@ -107,12 +107,14 @@ containers: [string]: {
             }
         ]
     }
-    dirs: {
-        "/acorn/scripts": "./scripts"
+    files: {
         if localData.tlsEnabled {
             "/certs/mongodb.pem": "secret://tls-certs/cert-key"
             "/certs/mongodb-cert": "secret://tls-certs/ca"
         }
+    }
+    dirs: {
+        "/acorn/scripts": "./scripts"
     }
 }
 
@@ -121,6 +123,8 @@ jobs: {
         image: "\(localData.mongoDBImageRepo):\(args.dbVersion)"
         dirs: {
             "/acorn/scripts": "./scripts"
+        }
+        files: {
             if localData.tlsEnabled {
                 "/certs/mongodb.pem": "secret://tls-certs/cert-key"
                 "/certs/mongodb-cert": "secret://tls-certs/ca"
