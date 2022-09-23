@@ -78,8 +78,8 @@ containers: [string]: {
         }
     }
     if args.diagnosticMode {
-        command: ["sleep"]
-        args: ["infinity"]
+        entrypoint: ["sleep"]
+        command: ["infinity"]
     }
     if !args.diagnosticMode {
         probes: [
