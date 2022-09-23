@@ -17,13 +17,13 @@ if [[ "$PTR_BACKUP" = 1 || "$PTR_BACKUP" =~ ^(yes|true)$ ]]; then
 fi
 
 COLLECTION_OPTION=""
-if [[ -z "$RESTORE_COLLECTION" ]]; then
-    COLLECTION_OPTION="--collection=$RESTORE_COLLECTION"
+if [[ -z "$BACKUP_COLLECTION" ]]; then
+    COLLECTION_OPTION="--collection=$BACKUP_COLLECTION"
 fi
 
 DATABASE_OPTION=""
-if [[ -z "$RESTORE_DB" ]]; then
-    DATABASE_OPTION="--db=$RESTORE_DB"
+if [[ -z "$BACKUP_DB" ]]; then
+    DATABASE_OPTION="--db=$BACKUP_DB"
 fi
 
 if [[ "$TLS_ENABLED" = 1 || "$TLS_ENABLED" =~ ^(yes|true)$ ]]; then

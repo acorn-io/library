@@ -6,7 +6,7 @@ This Acorn provides MongoDB instance. Users can select the instance architecture
 
 ## Quick start
 
-`acorn run [MONGODB_IMAGE] [--name ACORN_APP_NAME] [--target-namespace NAMESPACE]`
+`acorn run [--name ACORN_APP_NAME] [--target-namespace NAMESPACE] [MONGODB_IMAGE]`
 
 This will create a standalone MongoDB instance.
 In this instance, an initial user with `readWrite` role on an initial database `acorn` is created. MongoDB is fundamentally designed for "create on first use", so if you do not insert data, then no database is created.
@@ -20,7 +20,7 @@ You can get the username and password of root user if needed from the generated 
 
 By default, this will start a standalone MongoDB instance on a 10GB volume from the default storage class. Do not use this deployment for production systems as it lacks replication and high availability. For all production deployments use replica sets.
 You can simply use `prod` profile.
-`acorn run [MONGODB_IMAGE] --profile prod`
+`acorn run --profile prod [MONGODB_IMAGE]`
 This will deploy a replica set with 3 secondary nodes. In addition, it enables scheduled backup every 30 minutes.
 To learn more about replica sets deployment, see [Deploy a Replica Set](#deploy-a-replica-set).
 
@@ -28,12 +28,12 @@ To learn more about replica sets deployment, see [Deploy a Replica Set](#deploy-
 
 ```shell
   --is-replicaSet bool           Enable replicaset architecture. Default (false)
-  --db-name string               Specify the name of the database to create. Default(acorn)
   --db-user-name string          Specify the username of db user.
-  --replicas int                 Number of nodes to run in the MongoDB replica set. Default (1). Max (50)
+  --db-name string               Specify the name of the database to create. Default(acorn)
+  --replicas int                 Number of nodes to run in the MongoDB replica set. Default (3). Max (50)
   --diagnostic-mode bool         Enable diagnostic mode in the deployment. All probes will be disabled. Default (false)
-  --extra-flags string           Additional command line flags of MongoDB instance. Default ("")
   --auth-enabled bool            Enabling access control on a MongoDB deployment enforces authentication. Default (true)
+  --extra-flags string           Additional command line flags of MongoDB instance. Default ("")
   --arbiter-enabled bool         Enable deploying the arbiter. Default (false)
   --arbiter-extra-flags string   Arbiter additional command line flags. Default ("")
   --hidden-replicas int          Number of hidden nodes. Only valid when isReplicaset=true. Default (1)

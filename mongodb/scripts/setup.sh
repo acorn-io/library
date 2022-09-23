@@ -7,10 +7,6 @@ if is_empty_value "$MONGODB_ADVERTISED_PORT_NUMBER"; then
     export MONGODB_ADVERTISED_PORT_NUMBER="$MONGODB_PORT_NUMBER"
 fi
 shopt -s nocasematch
-if [[ "$EXTERNAL_ACCESS_ENABLED" = 1 || "$EXTERNAL_ACCESS_ENABLED" =~ ^(yes|true)$ ]]; then
-    SHARED_FILE="/tmp/shared/ip.txt"
-    export MONGODB_ADVERTISED_HOSTNAME="$(<${SHARED_FILE})"
-fi
 
 if [[ "$TLS_ENABLED" = 1 || "$TLS_ENABLED" =~ ^(yes|true)$ ]]; then
     export MONGODB_CLIENT_EXTRA_FLAGS="--tls --tlsCertificateKeyFile=/certs/mongodb.pem --tlsCAFile=/certs/mongodb-cert"

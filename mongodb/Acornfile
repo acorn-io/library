@@ -21,32 +21,22 @@ args: {
     hiddenReplicas: 0
     // Hidden node additional command line flags
     hiddenExtraFlargs: ""
-    // App installed namespace. NOTE(joseb): before fieldRef is supported,
-    appNamespace: "mongo"
     // Backup Schedule
     backupSchedule: ""
     // Specify to use oplog for taking a point-in-time snapshot
     ptrBackup: false
-    // Collection name to backup
-    backupCollection: ""
     // DB name to backup
     backupDB: ""
+    // Collection name to backup
+    backupCollection: ""
     // Backup name to restore
     backupToRestore: ""
-    // Mongodb version
-    dbVersion: "5.0.12"
     // Days to keep backup
     backupRetainDays: 5
-    // Allow access from outside of k8s cluster
-    externalAccessEnabled: false
-    // TLS certificate
-    tlsCertificate: ""
-    // TLS key
-    tlsKey: ""
-    // TLS CA
-    tlsCA: ""
+    // Mongodb version
+    dbVersion: "5.0.12"
     // TLS mode (options: `allowTLS`, `preferTLS`, `requireTLS`)
-    tlsMode: "requireTLS"
+    tlsMode: ""
 }
 
 profiles: {
@@ -57,8 +47,8 @@ profiles: {
 }
 
 localData: {
-    autoDiscovery: false
-    tlsEnabled: args.tlsCA != "" && args.tlsCertificate != "" && args.tlsKey != ""
+    tlsEnabled: args.tlsMode != ""
+    mongoDBImageRepo: "bitnami/mongodb"
     if args.isReplicaSet {
         mongodbServerList: std.join([for i in std.range(args.replicas) {"mongodb-\(i):27017"}], ",")
         mongodbDependsOn: [ for i in std.range(args.replicas) {"mongodb-\(i)"}]
@@ -69,73 +59,114 @@ localData: {
     }
 }
 
+containers: [string]: {
+    image: "\(localData.mongoDBImageRepo):\(args.dbVersion)"
+    ports: {
+        expose: "27017:27017"
+    }
+    env: {
+        "MONGODB_PORT_NUMBER": "27017"
+        "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
+        "TLS_ENABLED": "\(localData.tlsEnabled)"
+        "MONGODB_USERNAME": "secret://db-user-credentials/username?onchange=no-action"
+        "MONGODB_DATABASE": "\(args.dbName)"
+        "TLS_MODE": "\(args.tlsMode)"
+        if args.isReplicaSet {
+            "MONGODB_SERVER_LIST": "\(localData.mongodbServerList)"
+            "MONGODB_INITIAL_PRIMARY_HOST": "mongodb-0"
+            "MONGODB_REPLICA_SET_NAME": "rs0"
+        }
+    }
+    if args.diagnosticMode {
+        command: ["sleep"]
+        args: ["infinity"]
+    }
+    if !args.diagnosticMode {
+        probes: [
+            {
+                type:                "liveness"
+                initialDelaySeconds: 30
+                periodSeconds:       20
+                timeoutSeconds:      10
+                successThreshold:    1
+                failureThreshold:    6
+                tcp: {
+                    url: "tcp://localhost:27017"
+                }
+            },
+            {
+                type:                "readiness"
+                initialDelaySeconds: 5
+                periodSeconds:       20
+                timeoutSeconds:      10
+                successThreshold:    1
+                failureThreshold:    6
+                tcp: {
+                    url: "tcp://localhost:27017"
+                }
+            }
+        ]
+    }
+    dirs: {
+        "/acorn/scripts": "./scripts"
+        if localData.tlsEnabled {
+            "/certs/mongodb.pem": "secret://tls-certs/cert-key"
+            "/certs/mongodb-cert": "secret://tls-certs/ca"
+        }
+    }
+}
+
+jobs: {
+    [string]: {
+        image: "\(localData.mongoDBImageRepo):\(args.dbVersion)"
+        dirs: {
+            "/acorn/scripts": "./scripts"
+            if localData.tlsEnabled {
+                "/certs/mongodb.pem": "secret://tls-certs/cert-key"
+                "/certs/mongodb-cert": "secret://tls-certs/ca"
+            }
+        }
+    }
+    [Name= =~ "create-.*-user"]: {
+        env: {
+            "MONGODB_SERVER_LIST": "\(localData.mongodbServerList)"
+            "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
+            "TLS_ENABLED": "\(localData.tlsEnabled)"
+            if args.authEnabled {
+                "MONGODB_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
+                "MONGODB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
+            }
+        }
+        dependsOn: localData.mongodbDependsOn
+    }
+    [Name= =~ "*-backup"]:{
+        dirs: {
+            "/backups": "volume://mongodb-backup"
+        }
+        env: {
+            "TLS_ENABLED": "\(localData.tlsEnabled)"
+            "PTR_BACKUP": "\(args.ptrBackup)"
+            "MONGODB_URI": "mongodb://\(localData.mongodbServerList)"
+            "BACKUP_DB": "\(args.backupDB)"
+            "BACKUP_COLLECTION": "\(args.backupCollection)"
+        }
+    }
+}
+
 // Standalone instance
 if !args.isReplicaSet {
     containers: {
         "mongodb-0": {
-            image: "bitnami/mongodb:\(args.dbVersion)"
-            ports: {
-                if args.externalAccessEnabled {
-                    publish: "27017:27017"
-                }
-                if !args.externalAccessEnabled {
-                    expose: "27017:27017"
-                }
-            }
             env: {
-                "MONGODB_PORT_NUMBER": "27017"
-                "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
-                "TLS_ENABLED": "\(localData.tlsEnabled)"
-                "MONGODB_USERNAME": "secret://db-user-credentials/username?onchange=no-action"
-                "MONGODB_DATABASE": "\(args.dbName)"
+                "MONGODB_EXTRA_FLAGS": "\(args.extraFlags)"
                 if args.authEnabled {
                     "MONGODB_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
                     "MONGODB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
                     "MONGODB_PASSWORD": "secret://db-user-credentials/password?onchange=no-action"
                 }
-                if args.extraFlags != "" {
-                    "MONGODB_EXTRA_FLAGS": "\(args.extraFlags)"
-                }
-            }
-            if args.diagnosticMode {
-                command: ["sleep"]
-                args: ["infinity"]
-            }
-            if !args.diagnosticMode {
-                probes: [
-                    {
-                        type:                "liveness"
-                        initialDelaySeconds: 30
-                        periodSeconds:       20
-                        timeoutSeconds:      10
-                        successThreshold:    1
-                        failureThreshold:    6
-                        exec: command: [
-                            "bash",
-                            "/acorn/scripts/ping.sh"
-                        ]
-                    },
-                    {
-                        type:                "readiness"
-                        initialDelaySeconds: 5
-                        periodSeconds:       10
-                        timeoutSeconds:      5
-                        successThreshold:    1
-                        failureThreshold:    6
-                        exec: command: [
-                            "bash",
-                            "/acorn/scripts/ping.sh"
-                        ]
-                    }
-                ]
             }
             dirs: {
-                "/acorn/scripts": "./scripts"
                 "/bitnami/mongodb": "volume://mongodb-data-0"
-                if localData.tlsEnabled {
-                    "/certs/mongodb.pem": "secret://tls-certs/cert-key"
-                    "/certs/mongodb-cert": "secret://tls-certs/ca"
-                }
             }
         }
     }
@@ -147,53 +178,15 @@ if !args.isReplicaSet {
 // Replicaset instance
 if args.isReplicaSet {
     for i in std.range(args.replicas) {
-        if localData.autoDiscovery && args.externalAccessEnabled {
-            jobs: {
-                "mongodb-service-discovery-\(i)": {
-                    image: "bitnami/kubectl"
-                    command: ["/acorn/scripts/service_discovery.sh"]
-                    dirs: {
-                        "/acorn/scripts": "./scripts"
-                        "/tmp/shared": "volume://mongodb-service-discovery-\(i)"
-                    }
-                    env: {
-                        "MY_POD_NAMESPACE": "\(args.appNamespace)"
-                        "MY_POD_NAME": "mongodb-\(i)"
-                    }
-                }
-            }
-            volumes: {
-                "mongodb-service-discovery-\(i)": {
-                    size: "10m"
-                }
-            }
-        }
         containers: {
             "mongodb-\(i)": {
-                image: "bitnami/mongodb:\(args.dbVersion)"
-                ports: {
-                    if args.externalAccessEnabled {
-                        publish: "27017:27017"
-                    }
-                    if !args.externalAccessEnabled {
-                        expose: "27017:27017"
-                    }
+                if !args.diagnosticMode {
+                    command: ["/acorn/scripts/setup.sh"]
                 }
                 env: {
-                    "MY_POD_NAMESPACE": "\(args.appNamespace)"
-                    "EXTERNAL_ACCESS_ENABLED": "\(localData.autoDiscovery && args.externalAccessEnabled)"
-                    "MONGODB_INITIAL_PRIMARY_HOST": "mongodb-0"
-                    "MONGODB_REPLICA_SET_NAME": "rs0"
                     "MONGODB_ADVERTISED_HOSTNAME": "mongodb-\(i)"
-                    "MONGODB_PORT_NUMBER": "27017"
                     "MY_POD_INDEX": "\(i)"
-                    "MONGODB_SERVER_LIST": "\(localData.mongodbServerList)"
-                    "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
-                    "TLS_ENABLED": "\(localData.tlsEnabled)"
-                    "MONGODB_USERNAME": "secret://db-user-credentials/username?onchange=no-action"
-                    "MONGODB_DATABASE": "\(args.dbName)"
                     "MONGODB_EXTRA_FLAGS": "\(args.extraFlags)"
-                    "TLS_MODE": "\(args.tlsMode)"
                     if args.authEnabled {
                         "MONGODB_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
                         "MONGODB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
@@ -201,63 +194,11 @@ if args.isReplicaSet {
                         "MONGODB_REPLICA_SET_KEY": "secret://replicaset-key/key?onchange=no-action"
                     }
                 }
-                if localData.autoDiscovery && args.externalAccessEnabled {
-                    if i != 0 {
-                        dependsOn: ["mongodb-\(i-1)", "mongodb-service-discovery-\(i)"]
-                    }
-                    if i == 0 {
-                        dependsOn: ["mongodb-service-discovery-0"]
-                    }
-                    dirs: {
-                        "/tmp/shared": "volume://mongodb-service-discovery-\(i)"
-                    }
-                }
-                if !(localData.autoDiscovery && args.externalAccessEnabled) {
-                    if i != 0 {
-                        dependsOn: "mongodb-\(i-1)"
-                    }
-                }
-                if args.diagnosticMode {
-                    command: ["sleep"]
-                    args: ["infinity"]
-                }
-                if !args.diagnosticMode {
-
-                    command: ["/acorn/scripts/setup.sh"]
-                    probes: [
-                        {
-                            type:                "liveness"
-                            initialDelaySeconds: 30
-                            periodSeconds:       20
-                            timeoutSeconds:      10
-                            successThreshold:    1
-                            failureThreshold:    6
-                            exec: command: [
-                                "bash",
-                                "/acorn/scripts/ping.sh"
-                            ]
-                        },
-                        {
-                            type:                "readiness"
-                            initialDelaySeconds: 5
-                            periodSeconds:       10
-                            timeoutSeconds:      5
-                            successThreshold:    1
-                            failureThreshold:    6
-                            exec: command: [
-                                "bash",
-                                "/acorn/scripts/ping.sh"
-                            ]
-                        }
-                    ]
+                if i != 0 {
+                    dependsOn: "mongodb-\(i-1)"
                 }
                 dirs: {
-                    "/acorn/scripts": "./scripts"
                     "/bitnami/mongodb": "volume://mongodb-data-\(i)"
-                    if localData.tlsEnabled {
-                        "/certs/mongodb.pem": "secret://tls-certs/cert-key"
-                        "/certs/mongodb-cert": "secret://tls-certs/ca"
-                    }
                 }
             }
         }
@@ -271,18 +212,9 @@ if args.isReplicaSet {
 if args.isReplicaSet && args.arbiterEnabled {
     containers: {
         "arbiter-0": {
-            image: "bitnami/mongodb:\(args.dbVersion)"
-            ports: {
-                expose: "27017:27017"
-            }
             env: {
-                "MY_POD_NAMESPACE": "\(args.appNamespace)"
                 "MONGODB_REPLICA_SET_MODE": "arbiter"
-                "MONGODB_INITIAL_PRIMARY_HOST": "mongodb-0"
-                "MONGODB_REPLICA_SET_NAME": "rs0"
                 "MONGODB_ADVERTISED_HOSTNAME": "arbiter-0"
-                "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
-                "TLS_ENABLED": "\(localData.tlsEnabled)"
                 if args.authEnabled {
                     "MONGODB_INITIAL_PRIMARY_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
                     "MONGODB_INITIAL_PRIMARY_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
@@ -296,42 +228,6 @@ if args.isReplicaSet && args.arbiterEnabled {
                     "MONGODB_EXTRA_FLAGS": "\(args.arbiterExtraFlags)"
                 }
             }
-            if args.diagnosticMode {
-                command: ["sleep"]
-                args: ["infinity"]
-            }
-            if !args.diagnosticMode {
-                probes: [
-                    {
-                        type:                "liveness"
-                        initialDelaySeconds: 30
-                        periodSeconds:       20
-                        timeoutSeconds:      10
-                        successThreshold:    1
-                        failureThreshold:    6
-                        tcp: {
-                            url: "tcp://localhost:27017"
-                        }
-                    },
-                    {
-                        type:                "readiness"
-                        initialDelaySeconds: 5
-                        periodSeconds:       20
-                        timeoutSeconds:      10
-                        successThreshold:    1
-                        failureThreshold:    6
-                        tcp: {
-                            url: "tcp://localhost:27017"
-                        }
-                    }
-                ]
-            }
-            if localData.tlsEnabled {
-                dirs: {
-                    "/certs/mongodb.pem": "secret://tls-certs/cert-key"
-                    "/certs/mongodb-cert": "secret://tls-certs/ca"
-                }
-            }
         }
     }
 }
@@ -341,22 +237,13 @@ if args.isReplicaSet && args.hiddenReplicas > 0 {
     for i in std.range(args.hiddenReplicas) {
         containers: {
             "hidden-\(i)": {
-                image: "bitnami/mongodb:\(args.dbVersion)"
-                ports: {
-                    expose: "27017:27017"
+                if !args.diagnosticMode {
+                    command: ["/acorn/scripts/setup-hidden.sh"]
                 }
                 env: {
-                    "MY_POD_NAMESPACE": "\(args.appNamespace)"
                     "MONGODB_REPLICA_SET_MODE": "hidden"
-                    "MONGODB_INITIAL_PRIMARY_HOST": "mongodb-0"
-                    "MONGODB_REPLICA_SET_NAME": "rs0"
                     "MONGODB_ADVERTISED_HOSTNAME": "hidden-\(i)"
-                    "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
-                    "TLS_ENABLED": "\(localData.tlsEnabled)"
-                    "MONGODB_USERNAME": "secret://db-user-credentials/username?onchange=no-action"
-                    "MONGODB_DATABASE": "secret://db-user-credentials/password?onchange=no-action"
                     "MONGODB_EXTRA_FLAGS": "\(args.hiddenExtraFlargs)"
-                    "TLS_MODE": "\(args.tlsMode)"
                     if args.authEnabled {
                         "MONGODB_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
                         "MONGODB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
@@ -365,46 +252,8 @@ if args.isReplicaSet && args.hiddenReplicas > 0 {
                     }
                 }
                 dependsOn: [ for i in std.range(args.replicas) {"mongodb-\(i)"}]
-                if args.diagnosticMode {
-                    command: ["sleep"]
-                    args: ["infinity"]
-                }
-                if !args.diagnosticMode {
-                    command: ["/acorn/scripts/setup-hidden.sh"]
-                    probes: [
-                        {
-                            type:                "liveness"
-                            initialDelaySeconds: 30
-                            periodSeconds:       20
-                            timeoutSeconds:      10
-                            successThreshold:    1
-                            failureThreshold:    6
-                            exec: command: [
-                                "bash",
-                                "/acorn/scripts/ping.sh"
-                            ]
-                        },
-                        {
-                            type:                "readiness"
-                            initialDelaySeconds: 5
-                            periodSeconds:       20
-                            timeoutSeconds:      10
-                            successThreshold:    1
-                            failureThreshold:    6
-                            exec: command: [
-                                "bash",
-                                "/acorn/scripts/ping.sh"
-                            ]
-                        }
-                    ]
-                }
                 dirs: {
-                    "/acorn/scripts": "./scripts"
                     "/bitnami/mongodb": "volume://hidden-data-\(i)"
-                    if localData.tlsEnabled {
-                        "/certs/mongodb.pem": "secret://tls-certs/cert-key"
-                        "/certs/mongodb-cert": "secret://tls-certs/ca"
-                    }
                 }
             }
         }
@@ -418,47 +267,20 @@ if args.isReplicaSet && args.hiddenReplicas > 0 {
 if args.backupSchedule != "" {
     jobs: {
         "create-backup-user": {
-            image: "bitnami/mongodb:\(args.dbVersion)"
             command: ["/acorn/scripts/create_backup_user.sh"]
-            dirs: {
-                "/acorn/scripts": "./scripts"
-                if localData.tlsEnabled {
-                    "/certs/mongodb.pem": "secret://tls-certs/cert-key"
-                    "/certs/mongodb-cert": "secret://tls-certs/ca"
-                }
-            }
             env: {
-                "MONGODB_SERVER_LIST": "\(localData.mongodbServerList)"
-                "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
-                "TLS_ENABLED": "\(localData.tlsEnabled)"
-                if args.authEnabled {
-                    "MONGODB_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
-                    "MONGODB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
-                }
                 "BACKUP_USER": "secret://backup-user-credentials/username"
                 "BACKUP_PASSWORD": "secret://backup-user-credentials/password"
             }
-            dependsOn: localData.mongodbDependsOn
         }
-        "backup": {
-            image: "bitnami/mongodb:\(args.dbVersion)"
+        "create-backup": {
             command: ["/acorn/scripts/backup.sh"]
             dirs: {
                 "/backups": "volume://mongodb-backup"
-                "/acorn/scripts": "./scripts"
-                if localData.tlsEnabled {
-                    "/certs/mongodb.pem": "secret://tls-certs/cert-key"
-                    "/certs/mongodb-cert": "secret://tls-certs/ca"
-                }
             }
             env: {
-                "TLS_ENABLED": "\(localData.tlsEnabled)"
-                "PTR_BACKUP": "\(args.ptrBackup)"
-                "MONGODB_URI": "mongodb://\(localData.mongodbServerList)"
                 "BACKUP_USER": "secret://backup-user-credentials/username"
                 "BACKUP_PASSWORD": "secret://backup-user-credentials/password"
-                "BACKUP_DB": "\(args.backupDB)"
-                "BACKUP_COLLECTION": "\(args.backupCollection)"
                 "BACKUP_RETAIN_DAYS": "\(args.backupRetainDays)"
             }
             schedule: args.backupSchedule
@@ -479,46 +301,19 @@ if args.backupSchedule != "" {
 if args.backupToRestore != "" {
     jobs: {
         "create-restore-user": {
-            image: "bitnami/mongodb:\(args.dbVersion)"
             command: ["/acorn/scripts/create_restore_user.sh"]
-            dirs: {
-                "/acorn/scripts": "./scripts"
-                if localData.tlsEnabled {
-                    "/certs/mongodb.pem": "secret://tls-certs/cert-key"
-                    "/certs/mongodb-cert": "secret://tls-certs/ca"
-                }
-            }
             env: {
-                "MONGODB_SERVER_LIST": "\(localData.mongodbServerList)"
-                "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
-                "TLS_ENABLED": "\(localData.tlsEnabled)"
-                if args.authEnabled {
-                    "MONGODB_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
-                    "MONGODB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
-                }
                 "RESTORE_USER": "secret://restore-user-credentials/username"
                 "RESTORE_PASSWORD": "secret://restore-user-credentials/password"
             }
-            dependsOn: localData.mongodbDependsOn
         }
         "restore-from-backup": {
-            image: "bitnami/mongodb:\(args.dbVersion)"
             dirs: {
                 "/backups": "volume://mongodb-backup"
-                "/acorn/scripts": "./scripts"
-                if localData.tlsEnabled {
-                    "/certs/mongodb.pem": "secret://tls-certs/cert-key"
-                    "/certs/mongodb-cert": "secret://tls-certs/ca"
-                }
             }
             env: {
-                "TLS_ENABLED": "\(localData.tlsEnabled)"
-                "PTR_BACKUP": "\(args.ptrBackup)"
-                "MONGODB_URI": "mongodb://\(localData.mongodbServerList)"
                 "RESTORE_USER": "secret://restore-user-credentials/username"
                 "RESTORE_PASSWORD": "secret://restore-user-credentials/password"
-                "RESTORE_DB": "\(args.backupDB)"
-                "RESTORE_COLLECTION": "\(args.backupCollection)"
                 "BACKUP_FILENAME": "\(args.backupToRestore)"
             }
             command: ["/acorn/scripts/restore.sh"]
@@ -576,10 +371,6 @@ secrets: {
     if localData.tlsEnabled {
         "tls-certs": {
             type: "opaque"
-            data: {
-                "cert-key": "\(args.tlsCA)"
-                "ca": "\(args.tlsCertificate)\(args.tlsKey)"
-            }
         }
     }
 }
