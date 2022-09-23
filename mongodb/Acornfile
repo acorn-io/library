@@ -139,7 +139,7 @@ jobs: {
         }
         dependsOn: localData.mongodbDependsOn
     }
-    [Name= =~ "*-backup"]:{
+    [Name= =~ ".*-backup"]:{
         dirs: {
             "/backups": "volume://mongodb-backup"
         }
@@ -368,9 +368,7 @@ secrets: {
             }
         }
     }
-    if localData.tlsEnabled {
-        "tls-certs": {
-            type: "opaque"
-        }
+    "tls-certs": {
+        type: "opaque"
     }
 }
