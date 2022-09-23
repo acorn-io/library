@@ -291,7 +291,7 @@ if args.backupSchedule != "" {
         "backup-list": {
             type: "generated"
             params: {
-                job: "backup"
+                job: "create-backup"
             }
         }
     }
