@@ -48,7 +48,7 @@ profiles: {
 
 localData: {
     tlsEnabled: args.tlsMode != ""
-    mongoDBImageRepo: "bitnami/mongodb"
+    mongoDBImageRepo: "mongo"
     if args.isReplicaSet {
         mongodbServerList: std.join([for i in std.range(args.replicas) {"mongodb-\(i):27017"}], ",")
         mongodbDependsOn: [ for i in std.range(args.replicas) {"mongodb-\(i)"}]
@@ -116,6 +116,7 @@ containers: [string]: {
     }
     dirs: {
         "/acorn/scripts": "./scripts"
+        "/etc/mongo": "./conf"
     }
 }
 
@@ -162,6 +163,9 @@ jobs: {
 if !args.isReplicaSet {
     containers: {
         "mongodb-0": {
+            if !args.diagnosticMode {
+                command: ["/acorn/scripts/run.sh"]
+            }
             env: {
                 "MONGODB_EXTRA_FLAGS": "\(args.extraFlags)"
                 if args.authEnabled {
@@ -171,7 +175,7 @@ if !args.isReplicaSet {
                 }
             }
             dirs: {
-                "/bitnami/mongodb": "volume://mongodb-data-0"
+                "/var/lib/mongodb": "volume://mongodb-data-0"
             }
         }
     }
@@ -186,7 +190,7 @@ if args.isReplicaSet {
         containers: {
             "mongodb-\(i)": {
                 if !args.diagnosticMode {
-                    command: ["/acorn/scripts/setup.sh"]
+                    command: ["/acorn/scripts/start.sh"]
                 }
                 env: {
                     "MONGODB_ADVERTISED_HOSTNAME": "mongodb-\(i)"
@@ -203,7 +207,7 @@ if args.isReplicaSet {
                     dependsOn: "mongodb-\(i-1)"
                 }
                 dirs: {
-                    "/bitnami/mongodb": "volume://mongodb-data-\(i)"
+                    "/var/lib/mongodb": "volume://mongodb-data-\(i)"
                 }
             }
         }
@@ -217,6 +221,9 @@ if args.isReplicaSet {
 if args.isReplicaSet && args.arbiterEnabled {
     containers: {
         "arbiter-0": {
+            if !args.diagnosticMode {
+                command: ["/acorn/scripts/run.sh"]
+            }
             env: {
                 "MONGODB_REPLICA_SET_MODE": "arbiter"
                 "MONGODB_ADVERTISED_HOSTNAME": "arbiter-0"
@@ -233,6 +240,7 @@ if args.isReplicaSet && args.arbiterEnabled {
                     "MONGODB_EXTRA_FLAGS": "\(args.arbiterExtraFlags)"
                 }
             }
+            dependsOn: [ for i in std.range(args.replicas) {"mongodb-\(i)"}]
         }
     }
 }
@@ -243,7 +251,7 @@ if args.isReplicaSet && args.hiddenReplicas > 0 {
         containers: {
             "hidden-\(i)": {
                 if !args.diagnosticMode {
-                    command: ["/acorn/scripts/setup-hidden.sh"]
+                    command: ["/acorn/scripts/start_hidden.sh"]
                 }
                 env: {
                     "MONGODB_REPLICA_SET_MODE": "hidden"
@@ -258,7 +266,7 @@ if args.isReplicaSet && args.hiddenReplicas > 0 {
                 }
                 dependsOn: [ for i in std.range(args.replicas) {"mongodb-\(i)"}]
                 dirs: {
-                    "/bitnami/mongodb": "volume://hidden-data-\(i)"
+                    "/var/lib/mongodb": "volume://hidden-data-\(i)"
                 }
             }
         }

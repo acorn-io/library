@@ -1,5 +1,5 @@
 #!/bin/bash
-. /opt/bitnami/scripts/mongodb-env.sh
+. /acorn/scripts/env.sh
 echo "Advertised Hostname: $MONGODB_ADVERTISED_HOSTNAME"
 echo "Advertised Port: $MONGODB_ADVERTISED_PORT_NUMBER"
 echo "Configuring node as a hidden node"
@@ -22,4 +22,4 @@ export MONGODB_ROOT_PASSWORD_FILE=""
 export MONGODB_EXTRA_USERNAMES_FILE=""
 export MONGODB_EXTRA_DATABASES_FILE=""
 export MONGODB_EXTRA_PASSWORDS_FILE=""
-exec /opt/bitnami/scripts/mongodb/entrypoint.sh /opt/bitnami/scripts/mongodb/run.sh
+/acorn/scripts/run.sh

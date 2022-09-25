@@ -1,8 +1,8 @@
 #!/bin/bash
-. /opt/bitnami/scripts/mongodb-env.sh
-. /opt/bitnami/scripts/libfs.sh
-. /opt/bitnami/scripts/liblog.sh
-. /opt/bitnami/scripts/libvalidations.sh
+. /acorn/scripts/common_libs.sh
+. /acorn/scripts/mongo_libs.sh
+. /acorn/scripts/env.sh
+
 if is_empty_value "$MONGODB_ADVERTISED_PORT_NUMBER"; then
     export MONGODB_ADVERTISED_PORT_NUMBER="$MONGODB_PORT_NUMBER"
 fi
@@ -23,7 +23,7 @@ if is_dir_empty "${MONGODB_DATA_DIR}/db"; then
     info "Data dir empty, checking if the replica set already exists"
     current_primary=$(mongosh admin $MONGODB_CLIENT_EXTRA_FLAGS --host $MONGODB_SERVER_LIST --authenticationDatabase admin -u root -p $MONGODB_ROOT_PASSWORD --eval 'db.runCommand("ismaster")' | awk -F\' '/primary/ {print $2}')
     if ! is_empty_value "$current_primary"; then
-    info "Detected existing primary: ${current_primary}"
+        info "Detected existing primary: ${current_primary}"
     fi
 fi
 
@@ -58,4 +58,4 @@ if [[ "$MONGODB_REPLICA_SET_MODE" == "secondary" ]]; then
     export MONGODB_EXTRA_DATABASES_FILE=""
     export MONGODB_EXTRA_PASSWORDS_FILE=""
 fi
-exec /opt/bitnami/scripts/mongodb/entrypoint.sh /opt/bitnami/scripts/mongodb/run.sh
+/acorn/scripts/run.sh
