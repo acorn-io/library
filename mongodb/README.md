@@ -44,9 +44,10 @@ To learn more about replica sets deployment, see [Deploy a Replica Set](#deploy-
   --backup-collection string     Specify collection name to backup. If not specified, backup all collections. Default ("")
   --backup-to-restore string     Specify backup name to restore. Default ("")
   --backup-retain-days int       Specify the number of days to keep backup files. Default (5)
+  --tlsMode string               Specify TLS mode. Available values are allowTLS, preferTLS, and requireTLS.
 ```
 
-## Basics
+## Use cases
 
 ### Accessing MongoDB
 
@@ -248,7 +249,42 @@ acorn exec -c mongodb-0 [APP-NAME]
 ```
 You can access any container by changing `mongodb-0` with desired container name.
 
-## TODOs
+### TLS Support
+If you'd like to enable full TLS encryption, you have to create certificates first.
+#### Generate certificates.
+You can create your own CA and certificates by using `openssl`.
+```shell
+$ openssl genrsa -out ca.key 2048
+$ openssl req -x509 -new -nodes -key ca.key -days 10000 -out ca.crt -subj "/CN=mydomain.com"
+$ cat >openssl.cnf <<EOL
+[req]
+req_extensions = v3_req
+distinguished_name = req_distinguished_name
+[req_distinguished_name]
+[ v3_req ]
+basicConstraints = CA:FALSE
+keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+subjectAltName = @alt_names
+[alt_names]
+DNS.1 = $HOSTNAME1
+DNS.1 = $HOSTNAME2
+EOL
+$ openssl genrsa -out mongo.key 2048
+$ openssl req -new -key mongo.key -out mongo.csr -subj "/CN=$HOSTNAME" -config openssl.cnf
+$ openssl x509 -req -in mongo.csr \
+    -CA ca.crt -CAkey ca.key -CAcreateserial \
+    -out mongo.crt -days 3650 -extensions v3_req -extfile openssl.cnf
+$ cat mongo.crt mongo.key > mongo.pem
+```
+Please replace  `$HOSTNAME` with your actual hostname and `$HOSTNAME1` and `$HOSTNAME2` with alternative hostnames you want to allow access to the MongoDB replica set. You can add more alternative hostnames if needed.
 
-* TLS support
-* Expose MongoDB outside of k8s cluster
+#### Create Acorn secret
+Once certificates are prepared, create an Acorn secret using the following command.
+```shell
+acorn secret create --data=@cert-key=mongo.pem --data=@ca=ca.crt mongo-tls-cert
+```
+#### Bind Acorn tls secret at runtime
+When running the Acorn you have to bind in the Acorn secret including certificates and set `--tlsMode` to one of `allowTLS`, `preferTLS` or `requireTLS`.
+```
+acorn run -s mongo-tls-cert:tls-certs [MONGODB_ACORN_IMAGE] --tlsMode=requireTLS
+```
