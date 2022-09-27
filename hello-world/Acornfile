@@ -1,0 +1,13 @@
+containers: {
+	webapp: {
+		image: "nginx:latest"
+		ports: {
+			publish: "80/http"
+		}
+		scale: 1
+		dirs: {
+			"/usr/share/nginx/html": "./html"
+			"/etc/nginx/conf.d": "./nginx-conf"
+		}
+	}
+}
