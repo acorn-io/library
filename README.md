@@ -27,3 +27,10 @@ This repository houses all of the Acorn library image definitions.
 
 1. If you are using if blocks to deploy an optional component, the if block should add/modify keys in the overall acorn key order.
 1. When merging user provided structs with default structs, place the user provided struct variable first. `args.deploy.userData & {...acorn defined data}`.
+
+## Tagging and publishing images
+
+In this repo, images are built and published based on git tags. The tag contains information about the image to publish and the version to give it. Here are the guidelines for tagging to publish an image:
+- The tag must be of the form: `<image name>/<version>`
+- The `image name` portion must map to a directory name in the repo
+- The `version` portion will be used as the image version. As such, it must conform to image tag restrictions. For example, it cannot contain a `+` symbol.
