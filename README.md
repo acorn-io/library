@@ -33,4 +33,5 @@ This repository houses all of the Acorn library image definitions.
 In this repo, images are built and published based on git tags. The tag contains information about the image to publish and the version to give it. Here are the guidelines for tagging to publish an image:
 - The tag must be of the form: `<image name>/<version>`
 - The `image name` portion must map to a directory name in the repo
-- The `version` portion will be used as the image version. As such, it must conform to image tag restrictions. For example, it cannot contain a `+` symbol.
+- The `version` portion will be used as the image version. As such, it must conform to image tag restrictions. For example, it cannot contain a `+` symbol
+- The `version` portion must start with `v` and be followed by a number
