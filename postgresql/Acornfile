@@ -1,20 +1,15 @@
 args: {
+    // Number of replicas
+	replicas: 1
+
 	// The user credentials to be set
 	postgresUser: "admin"
 
 	postgresDb: "acorn"
 
-	// It can be used to send arguments to postgres initdb
-	// This is useful for adding functionality like "--data-checksums"
-	postgresInitDbArgs: ""
-
-	// It can be used to define another location for the Postgres transaction log.
-	postgresInitDbWalDir: ""
-
-	postgresHostAuthMethod: ""
-
 	// It can be used to define location for the database files
-	pgData: "/var/lib/postgresql/data"
+	// pgData: "/var/lib/postgresql/data"
+	pgData: "/acorn/data"
 
 	// Backup Schedule
 	backupSchedule: "@hourly"
@@ -23,28 +18,79 @@ args: {
 	restoreFromBackup: ""
 }
 
-containers: {
-	postgresql: {
-		image:  "postgres:14.5-bullseye"
-		ports: {
-			internal: [
-               //prometheus monitoring
-				"9187:9187"
-			]
-			expose: "5432:5432"
+for i in std.range(args.replicas) {
+	containers: {
+		if i != 0 {
+			"postgresql-\(i)": {
+				// image:  "postgres:14.5-bullseye"
+				image: "bitnami/postgresql:14"
+				ports: {
+					internal: [
+					//prometheus monitoring
+						"9187:9187"
+					]
+					expose: "5432:5432"
+				}
+				env: {
+					"POSTGRES_PASSWORD": "secret://root-credentials/password"
+					"POSTGRES_USER": "secret://root-credentials/username"
+					"POSTGRES_DB": "\(args.postgresDb)"
+					"PGDATA": "\(args.pgData)"
+					"POSTGRESQL_REPLICATION_MODE": "slave"
+					"POSTGRESQL_REPLICATION_USER": "secret://root-credentials/username"
+					"POSTGRESQL_REPLICATION_PASSWORD": "secret://root-credentials/password"
+					"POSTGRESQL_MASTER_HOST": "postgresql-master"
+					"POSTGRESQL_PASSWORD": "secret://root-credentials/password"
+					"POSTGRESQL_MASTER_PORT_NUMBER": "5432"
+					"POSTGRESQL_USERNAME": "admin"
+					"POSTGRESQL_DATABASE": "\(args.postgresDb)"
+					"ALLOW_EMPTY_PASSWORD": "yes"
+				}
+				dirs: {
+					"\(args.pgData)": "volume://pgdata-\(i)"
+					"/backup": "volume://backup"
+				}
+		    }
+	    } 
+		
+		if i == 0 {
+			"postgresql-master": {
+				// image:  "postgres:14.5-bullseye"
+				image: "bitnami/postgresql:14"
+				ports: {
+					internal: [
+					//prometheus monitoring
+						"9187:9187"
+					]
+					expose: "5432:5432"
+				}
+				env: {
+					"POSTGRES_PASSWORD": "secret://root-credentials/password"
+					"POSTGRES_USER": "secret://root-credentials/username"
+					"POSTGRES_DB": "\(args.postgresDb)"
+					"PGDATA": "\(args.pgData)"
+					"POSTGRESQL_REPLICATION_MODE": "master"
+					"POSTGRESQL_REPLICATION_USER": "secret://root-credentials/username"
+					"POSTGRESQL_REPLICATION_PASSWORD": "secret://root-credentials/password"
+					"POSTGRESQL_USERNAME": "secret://root-credentials/username" 
+					"POSTGRESQL_PASSWORD": "secret://root-credentials/password"
+					"POSTGRESQL_DATABASE": "\(args.postgresDb)"
+					"ALLOW_EMPTY_PASSWORD": "yes"
+				}
+				dirs: {
+					"\(args.pgData)": "volume://pgdata-0"
+					"/backup": "volume://backup"
+					"/acorn/scripts": "./scripts"
+				}
+				command: ["sh","/acorn/scripts/chown.sh", "\(args.pgData)"]
+		    }
 		}
-		env: {
-			"POSTGRES_PASSWORD": "secret://root-credentials/password"
-			"POSTGRES_USER": "secret://root-credentials/username"
-			"POSTGRES_DB": "\(args.postgresDb)"
-			"POSTGRES_INITDB_ARGS": "\(args.postgresInitDbArgs)"
-			"POSTGRES_INITDB_WALDIR": "\(args.postgresInitDbWalDir)"
-			"POSTGRES_HOST_AUTH_METHOD": "\(args.postgresHostAuthMethod)"
-			"PGDATA": "\(args.pgData)"
-		}
-		dirs: {
-			"\(args.pgData)": "volume://pgdata-0"
-			"/backup": "volume://backup"
+	}
+
+	// The volume for container 0 will always be present, even when scaled to 0 for restore.
+	if i != 0 {
+		volumes: {
+			"pgdata-\(i)": {}
 		}
 	}
 }
@@ -78,6 +124,24 @@ if args.backupSchedule != "" {
 				"POSTGRES_DB": "\(args.postgresDb)"
 			}
 			schedule: "@hourly"
+		}
+	}
+}
+
+if args.restoreFromBackup != "" {
+	jobs: {
+		"restore-from-backup": {
+			image: "postgres:14.5-bullseye"
+			dirs: {
+				"/acorn/scripts": "./scripts"
+				"/backup": "volume://backup"
+			}
+			env: {
+				"POSTGRES_USER":     "secret://root-credentials/username"
+				"POSTGRES_PASSWORD": "secret://root-credentials/password"
+				"POSTGRES_DB": "\(args.postgresDb)"
+			}
+			command: ["sh","/acorn/scripts/restore.sh", args.restoreFromBackup]
 		}
 	}
 }
