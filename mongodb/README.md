@@ -192,6 +192,8 @@ mongosh admin --host $MONGODB_SERVER_LIST --authenticationDatabase admin -u root
 
 If you would like to back up your database, you can launch with or update the app with a `--backup-schedule`. The backup schedule is in cron format.
 
+It stores backup archive files in a dedicated PV(Persistent Volume). So it is highly recommended to use a storage system outside of the Kubernetes cluster for persistent volume provisioning to preserve backup files even if the entire cluster is down. More specifically, acorn volumes are provisioned by the default storage class of Kubernetes cluster. So you have to choose remote storage backend for the default storage class.
+
 Here is an example of how you could do daily backups:
 `acorn run [MONGODB_ACORN_IMAGE] --backup-schedule "0 0 * * *"`
 
@@ -279,12 +281,12 @@ $ cat mongo.crt mongo.key > mongo.pem
 Please replace  `$HOSTNAME` with your actual hostname and `$HOSTNAME1` and `$HOSTNAME2` with alternative hostnames you want to allow access to the MongoDB replica set. You can add more alternative hostnames if needed.
 
 #### Create Acorn secret
-Once certificates are prepared, create an Acorn secret using the following command.
+Once certificates are prepared, create an Acorn secret using the following command. Do not change key field names `cert-key` and `ca`.
 ```shell
 acorn secret create --data=@cert-key=mongo.pem --data=@ca=ca.crt mongo-tls-cert
 ```
 #### Bind Acorn tls secret at runtime
-When running the Acorn you have to bind in the Acorn secret including certificates and set `--tlsMode` to one of `allowTLS`, `preferTLS` or `requireTLS`.
+When running the Acorn you have to bind in the Acorn secret(created above) including certificates and set `--tlsMode` to one of `allowTLS`, `preferTLS` or `requireTLS`.
 ```
 acorn run -s mongo-tls-cert:tls-certs [MONGODB_ACORN_IMAGE] --tlsMode=requireTLS
 ```
