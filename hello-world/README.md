@@ -5,6 +5,6 @@ This is a very simple "Hello World" acorn. You can launch it with no additional 
 
 To run:
 ```
-acorn run ghcr.io/acorn-io/library/hello-world:v1.0.1
+acorn run ghcr.io/acorn-io/library/hello-world
 ```
 
