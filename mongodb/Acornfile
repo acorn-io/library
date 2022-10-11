@@ -1,0 +1,387 @@
+args: {
+    // Specify whether MongoDB instance is a standalone or replica set
+    isReplicaSet: false
+    // Custom user to be created during the initialization
+    dbUserName: ""
+    // Custom database to be created during the initialization
+    dbName: "acorn"
+    // Number of secondary nodes
+    replicas: 3
+    // Enable diagnostic mode
+    diagnosticMode: false
+    // Enable authentication
+    authEnabled: true
+    // Mongodb additional command line flags
+    extraFlags: ""
+    // Run arbiter node
+    arbiterEnabled: false
+    // Arbiter additional command line flags
+    arbiterExtraFlags: ""
+    // Number of hidden nodes
+    hiddenReplicas: 0
+    // Hidden node additional command line flags
+    hiddenExtraFlargs: ""
+    // Backup Schedule
+    backupSchedule: ""
+    // Specify to use oplog for taking a point-in-time snapshot
+    ptrBackup: false
+    // DB name to backup
+    backupDB: ""
+    // Collection name to backup
+    backupCollection: ""
+    // Backup name to restore
+    backupToRestore: ""
+    // Days to keep backup
+    backupRetainDays: 5
+    // Mongodb version
+    dbVersion: "5.0.12"
+    // TLS mode (options: `allowTLS`, `preferTLS`, `requireTLS`)
+    tlsMode: ""
+}
+
+profiles: {
+    prod: {
+        backupSchedule: "*/30 * * * *"
+        isReplicaSet: true
+    }
+}
+
+containers: [string]: {
+    image: "\(localData.mongoDBImageRepo):\(args.dbVersion)"
+    ports: {
+        expose: "27017:27017"
+    }
+    env: {
+        "MONGODB_PORT_NUMBER": "27017"
+        "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
+        "TLS_ENABLED": "\(localData.tlsEnabled)"
+        "MONGODB_USERNAME": "secret://db-user-credentials/username?onchange=no-action"
+        "MONGODB_DATABASE": "\(args.dbName)"
+        "TLS_MODE": "\(args.tlsMode)"
+        if args.isReplicaSet {
+            "MONGODB_SERVER_LIST": "\(localData.mongodbServerList)"
+            "MONGODB_INITIAL_PRIMARY_HOST": "mongodb-0"
+            "MONGODB_REPLICA_SET_NAME": "rs0"
+        }
+    }
+    if args.diagnosticMode {
+        entrypoint: ["sleep"]
+        command: ["infinity"]
+        probes: []
+    }
+    if !args.diagnosticMode {
+        probes: [
+            {
+                type:                "liveness"
+                initialDelaySeconds: 30
+                periodSeconds:       20
+                timeoutSeconds:      10
+                successThreshold:    1
+                failureThreshold:    6
+                tcp: {
+                    url: "tcp://localhost:27017"
+                }
+            },
+            {
+                type:                "readiness"
+                initialDelaySeconds: 5
+                periodSeconds:       20
+                timeoutSeconds:      10
+                successThreshold:    1
+                failureThreshold:    6
+                tcp: {
+                    url: "tcp://localhost:27017"
+                }
+            }
+        ]
+    }
+    files: {
+        if localData.tlsEnabled {
+            "/certs/mongodb.pem": "secret://tls-certs/cert-key"
+            "/certs/mongodb-cert": "secret://tls-certs/ca"
+        }
+    }
+    dirs: {
+        "/acorn/scripts": "./scripts"
+        "/etc/mongo": "./conf"
+    }
+}
+
+jobs: {
+    [string]: {
+        image: "\(localData.mongoDBImageRepo):\(args.dbVersion)"
+        dirs: {
+            "/acorn/scripts": "./scripts"
+        }
+        files: {
+            if localData.tlsEnabled {
+                "/certs/mongodb.pem": "secret://tls-certs/cert-key"
+                "/certs/mongodb-cert": "secret://tls-certs/ca"
+            }
+        }
+    }
+    [Name= =~ "create-.*-user"]: {
+        env: {
+            "MONGODB_SERVER_LIST": "\(localData.mongodbServerList)"
+            "ALLOW_EMPTY_PASSWORD": "\(!args.authEnabled)"
+            "TLS_ENABLED": "\(localData.tlsEnabled)"
+            if args.authEnabled {
+                "MONGODB_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
+                "MONGODB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
+            }
+        }
+        dependsOn: localData.mongodbDependsOn
+    }
+    [Name= =~ ".*-backup"]:{
+        dirs: {
+            "/backups": "volume://mongodb-backup"
+        }
+        env: {
+            "TLS_ENABLED": "\(localData.tlsEnabled)"
+            "PTR_BACKUP": "\(args.ptrBackup)"
+            "MONGODB_URI": "mongodb://\(localData.mongodbServerList)"
+            "BACKUP_DB": "\(args.backupDB)"
+            "BACKUP_COLLECTION": "\(args.backupCollection)"
+        }
+    }
+}
+
+// Standalone instance
+if !args.isReplicaSet {
+    containers: {
+        "mongodb-0": {
+            if !args.diagnosticMode {
+                command: ["/acorn/scripts/run.sh"]
+            }
+            env: {
+                "MONGODB_EXTRA_FLAGS": "\(args.extraFlags)"
+                if args.authEnabled {
+                    "MONGODB_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
+                    "MONGODB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
+                    "MONGODB_PASSWORD": "secret://db-user-credentials/password?onchange=no-action"
+                }
+            }
+            dirs: {
+                "/var/lib/mongodb": "volume://mongodb-data-0"
+            }
+        }
+    }
+    volumes: {
+        "mongodb-data-0": {}
+    }
+}
+
+// Replicaset instance
+if args.isReplicaSet {
+    for i in std.range(args.replicas) {
+        containers: {
+            "mongodb-\(i)": {
+                if !args.diagnosticMode {
+                    command: ["/acorn/scripts/start.sh"]
+                }
+                env: {
+                    "MONGODB_ADVERTISED_HOSTNAME": "mongodb-\(i)"
+                    "MY_POD_INDEX": "\(i)"
+                    "MONGODB_EXTRA_FLAGS": "\(args.extraFlags)"
+                    if args.authEnabled {
+                        "MONGODB_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
+                        "MONGODB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
+                        "MONGODB_PASSWORD": "secret://db-user-credentials/password?onchange=no-action"
+                        "MONGODB_REPLICA_SET_KEY": "secret://replicaset-key/key?onchange=no-action"
+                    }
+                }
+                if i != 0 {
+                    dependsOn: "mongodb-\(i-1)"
+                }
+                dirs: {
+                    "/var/lib/mongodb": "volume://mongodb-data-\(i)"
+                }
+            }
+        }
+        volumes: {
+            "mongodb-data-\(i)": {}
+        }
+    }
+}
+
+// Arbiter
+if args.isReplicaSet && args.arbiterEnabled {
+    containers: {
+        "arbiter-0": {
+            if !args.diagnosticMode {
+                command: ["/acorn/scripts/run.sh"]
+            }
+            env: {
+                "MONGODB_REPLICA_SET_MODE": "arbiter"
+                "MONGODB_ADVERTISED_HOSTNAME": "arbiter-0"
+                if args.authEnabled {
+                    "MONGODB_INITIAL_PRIMARY_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
+                    "MONGODB_INITIAL_PRIMARY_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
+                    "MONGODB_REPLICA_SET_KEY": "secret://replicaset-key/key?onchange=no-action"
+                }
+                if localData.tlsEnabled {
+                    "MONGODB_CLIENT_EXTRA_FLAGS": "--tls --tlsCertificateKeyFile=/certs/mongodb.pem --tlsCAFile=/certs/mongodb-cert"
+                    "MONGODB_EXTRA_FLAGS": "--tlsMode=\(args.tlsMode) --tlsCertificateKeyFile=/certs/mongodb.pem --tlsCAFile=/certs/mongodb-cert \(args.arbiterExtraFlags)"
+                }
+                if !localData.tlsEnabled {
+                    "MONGODB_EXTRA_FLAGS": "\(args.arbiterExtraFlags)"
+                }
+            }
+            dependsOn: [ for i in std.range(args.replicas) {"mongodb-\(i)"}]
+        }
+    }
+}
+
+// Hidden nodes
+if args.isReplicaSet && args.hiddenReplicas > 0 {
+    for i in std.range(args.hiddenReplicas) {
+        containers: {
+            "hidden-\(i)": {
+                if !args.diagnosticMode {
+                    command: ["/acorn/scripts/start_hidden.sh"]
+                }
+                env: {
+                    "MONGODB_REPLICA_SET_MODE": "hidden"
+                    "MONGODB_ADVERTISED_HOSTNAME": "hidden-\(i)"
+                    "MONGODB_EXTRA_FLAGS": "\(args.hiddenExtraFlargs)"
+                    if args.authEnabled {
+                        "MONGODB_ROOT_USER": "secret://root-credentials/username?onchange=no-action"
+                        "MONGODB_ROOT_PASSWORD": "secret://root-credentials/password?onchange=no-action"
+                        "MONGODB_PASSWORD": "\(args.dbName)"
+                        "MONGODB_REPLICA_SET_KEY": "secret://replicaset-key/key?onchange=no-action"
+                    }
+                }
+                dependsOn: [ for i in std.range(args.replicas) {"mongodb-\(i)"}]
+                dirs: {
+                    "/var/lib/mongodb": "volume://hidden-data-\(i)"
+                }
+            }
+        }
+        volumes: {
+            "hidden-data-\(i)": {}
+        }
+    }
+}
+
+// Backup job
+if args.backupSchedule != "" {
+    jobs: {
+        "create-backup-user": {
+            command: ["/acorn/scripts/create_backup_user.sh"]
+            env: {
+                "BACKUP_USER": "secret://backup-user-credentials/username"
+                "BACKUP_PASSWORD": "secret://backup-user-credentials/password"
+            }
+        }
+        "create-backup": {
+            command: ["/acorn/scripts/backup.sh"]
+            dirs: {
+                "/backups": "volume://mongodb-backup"
+            }
+            env: {
+                "BACKUP_USER": "secret://backup-user-credentials/username"
+                "BACKUP_PASSWORD": "secret://backup-user-credentials/password"
+                "BACKUP_RETAIN_DAYS": "\(args.backupRetainDays)"
+            }
+            schedule: args.backupSchedule
+            dependsOn: ["create-backup-user"]
+        }
+    }
+    secrets: {
+        "backup-list": {
+            type: "generated"
+            params: {
+                job: "create-backup"
+            }
+        }
+    }
+}
+
+// Restore job from a specified backup
+if args.backupToRestore != "" {
+    jobs: {
+        "create-restore-user": {
+            command: ["/acorn/scripts/create_restore_user.sh"]
+            env: {
+                "RESTORE_USER": "secret://restore-user-credentials/username"
+                "RESTORE_PASSWORD": "secret://restore-user-credentials/password"
+            }
+        }
+        "restore-from-backup": {
+            dirs: {
+                "/backups": "volume://mongodb-backup"
+            }
+            env: {
+                "RESTORE_USER": "secret://restore-user-credentials/username"
+                "RESTORE_PASSWORD": "secret://restore-user-credentials/password"
+                "BACKUP_FILENAME": "\(args.backupToRestore)"
+            }
+            command: ["/acorn/scripts/restore.sh"]
+            dependsOn: ["create-restore-user"]
+        }
+    }
+}
+
+if args.backupSchedule != "" || args.backupToRestore != "" {
+    volumes: {
+        "mongodb-backup": {}
+    }
+}
+
+secrets: {
+    "root-credentials": {
+        type: "basic"
+        data: {
+            username: "root"
+            password: ""
+        }
+    }
+    "db-user-credentials": {
+        type: "basic"
+        data: {
+            username: "\(args.dbUserName)"
+            password: ""
+        }
+    }
+    "backup-user-credentials": {
+        type: "basic"
+        data: {
+            username: "mongodbbackup"
+            password: ""
+        }
+    }
+    "restore-user-credentials": {
+        type: "basic"
+        data: {
+            username: "mongodbrestore"
+            password: ""
+        }
+    }
+    if args.isReplicaSet {
+        "replicaset-key-token": {
+            type: "token"
+        }
+        "replicaset-key": {
+            type: "template"
+            data: {
+                "key": "${secret://replicaset-key-token/token}"
+            }
+        }
+    }
+    "tls-certs": {
+        type: "opaque"
+    }
+}
+
+localData: {
+    tlsEnabled: args.tlsMode != ""
+    mongoDBImageRepo: "mongo"
+    if args.isReplicaSet {
+        mongodbServerList: std.join([for i in std.range(args.replicas) {"mongodb-\(i):27017"}], ",")
+        mongodbDependsOn: [ for i in std.range(args.replicas) {"mongodb-\(i)"}]
+    }
+    if !args.isReplicaSet {
+        mongodbServerList: "mongodb-0:27017"
+        mongodbDependsOn: ["mongodb-0"]
+    }
+}
