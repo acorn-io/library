@@ -21,9 +21,3 @@ Where the _appname_ should be substituted with your application name. It will re
         root-credentials-ccrh4   basic     username   admin
 
 
-## Available options
-
-## Making backup
-
-## Restoring backup
-

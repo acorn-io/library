@@ -3,6 +3,7 @@
 set -e
 
 backup_filename=${1}
+backup_database=${2}
 #backup_dir_name="${1%.*}"
 
 backup_root_dir='/backups'
@@ -19,7 +20,7 @@ echo "Untaring backup... ${backup_to_restore}"
 tar -zxvf "${backup_to_restore}" -C /scratch/
 
 #echo "Restoring..."
-#psql --set ON_ERROR_STOP=on dbname < dumpfile
+psql --set ON_ERROR_STOP=on "${backup_database}" < "${backup_filename}"
 
 #echo "Cleaning up scratch..."
 rm -rf /scratch/*
