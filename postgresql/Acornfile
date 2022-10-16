@@ -46,7 +46,6 @@ for i in std.range(args.replicas) {
 				files: {
 					"/etc/postgresql/postgresql.conf": "secret://postgresstandby-conf/template"
 				}
-				// command: ["sh","/acorn/scripts/replicastandby.sh",args.postgresUser, args.postgresDb]
 		    }
 	    } 
 		
@@ -75,7 +74,6 @@ for i in std.range(args.replicas) {
 				files: {
 					"/etc/postgresql/postgresql.conf": "secret://postgresmaster-conf/template"
 				}			
-				// command: ["sh","/acorn/scripts/replicamaster.sh",args.postgresUser, args.postgresDb]
 		    }
 		}
 	}
