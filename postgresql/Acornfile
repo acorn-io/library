@@ -7,6 +7,8 @@ args: {
 
 	postgresDb: "acorn"
 
+	postgresReplicationUser: "replica"
+
 	// It can be used to define location for the database files
 	// pgData: "/var/lib/postgresql/data"
 	pgData: "/acorn/data"
@@ -22,41 +24,36 @@ for i in std.range(args.replicas) {
 	containers: {
 		if i != 0 {
 			"postgresql-\(i)": {
-				// image:  "postgres:14.5-bullseye"
-				image: "bitnami/postgresql:14"
+				image:  "postgres:14.5-bullseye"
+				//image: "bitnami/postgresql:14"
 				ports: {
 					internal: [
 					//prometheus monitoring
 						"9187:9187"
 					]
-					expose: "5432:5432"
+					expose: "5433:5433"
 				}
 				env: {
 					"POSTGRES_PASSWORD": "secret://root-credentials/password"
 					"POSTGRES_USER": "secret://root-credentials/username"
 					"POSTGRES_DB": "\(args.postgresDb)"
 					"PGDATA": "\(args.pgData)"
-					"POSTGRESQL_REPLICATION_MODE": "slave"
-					"POSTGRESQL_REPLICATION_USER": "secret://root-credentials/username"
-					"POSTGRESQL_REPLICATION_PASSWORD": "secret://root-credentials/password"
-					"POSTGRESQL_MASTER_HOST": "postgresql-master"
-					"POSTGRESQL_PASSWORD": "secret://root-credentials/password"
-					"POSTGRESQL_MASTER_PORT_NUMBER": "5432"
-					"POSTGRESQL_USERNAME": "admin"
-					"POSTGRESQL_DATABASE": "\(args.postgresDb)"
-					"ALLOW_EMPTY_PASSWORD": "yes"
 				}
 				dirs: {
 					"\(args.pgData)": "volume://pgdata-\(i)"
 					"/backup": "volume://backup"
 				}
+				files: {
+					"/etc/postgresql/postgresql.conf": "secret://postgresstandby-conf/template"
+				}
+				// command: ["sh","/acorn/scripts/replicastandby.sh",args.postgresUser, args.postgresDb]
 		    }
 	    } 
 		
 		if i == 0 {
 			"postgresql-master": {
-				// image:  "postgres:14.5-bullseye"
-				image: "bitnami/postgresql:14"
+				image:  "postgres:14.5-bullseye"
+				//image: "bitnami/postgresql:14"
 				ports: {
 					internal: [
 					//prometheus monitoring
@@ -69,20 +66,16 @@ for i in std.range(args.replicas) {
 					"POSTGRES_USER": "secret://root-credentials/username"
 					"POSTGRES_DB": "\(args.postgresDb)"
 					"PGDATA": "\(args.pgData)"
-					"POSTGRESQL_REPLICATION_MODE": "master"
-					"POSTGRESQL_REPLICATION_USER": "secret://root-credentials/username"
-					"POSTGRESQL_REPLICATION_PASSWORD": "secret://root-credentials/password"
-					"POSTGRESQL_USERNAME": "secret://root-credentials/username" 
-					"POSTGRESQL_PASSWORD": "secret://root-credentials/password"
-					"POSTGRESQL_DATABASE": "\(args.postgresDb)"
-					"ALLOW_EMPTY_PASSWORD": "yes"
 				}
 				dirs: {
 					"\(args.pgData)": "volume://pgdata-0"
 					"/backup": "volume://backup"
 					"/acorn/scripts": "./scripts"
 				}
-				command: ["sh","/acorn/scripts/chown.sh", "\(args.pgData)"]
+				files: {
+					"/etc/postgresql/postgresql.conf": "secret://postgresmaster-conf/template"
+				}			
+				// command: ["sh","/acorn/scripts/replicamaster.sh",args.postgresUser, args.postgresDb]
 		    }
 		}
 	}
@@ -100,6 +93,51 @@ secrets: {
 		type: "basic"
 		data: {
 			username: "\(args.postgresUser)"
+		}
+	}
+	"postgresmaster-conf": {
+		type: "template"
+		data: {
+			template: """
+				    ### master configuration
+					listen_addresses = '*'
+					port = 5432
+					shared_buffers = 128MB
+					max_connections = 100
+					dynamic_shared_memory_type = posix
+					timezone = 'Etc/UTC'
+					lc_messages = 'en_US.utf8'
+					lc_monetary = 'en_US.utf8'
+					lc_numeric = 'en_US.utf8'
+					lc_time = 'en_US.utf8'
+					default_text_search_config = 'pg_catalog.english'
+					wal_level = replica
+					hot_standby = on
+					max_wal_senders = 10
+					max_replication_slots = 10
+					hot_standby_feedback = on
+				"""
+		}
+	}
+	"postgresstandby-conf": {
+		type: "template"
+		data: {
+			template: """
+				    ### master configuration
+					listen_addresses = '*'
+					port = 5432
+					shared_buffers = 128MB
+					max_connections = 100
+					dynamic_shared_memory_type = posix
+					timezone = 'Etc/UTC'
+					lc_messages = 'en_US.utf8'
+					lc_monetary = 'en_US.utf8'
+					lc_numeric = 'en_US.utf8'
+					lc_time = 'en_US.utf8'
+					default_text_search_config = 'pg_catalog.english'
+					wal_level = hot_standby
+					standby_mode = on
+				"""
 		}
 	}
 }
