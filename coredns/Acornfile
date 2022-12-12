@@ -1,0 +1,22 @@
+args: {
+	// Number of replicas to run
+    scale: 1
+
+    // String of a Corefile to run with
+    corefile: ""
+
+    // Version of CoreDNS to run
+    version: "1.10.0"
+}
+
+containers: {
+    coredns: {
+        scale: args.scale
+        ports: "53/udp"
+        image: "docker.io/coredns/coredns:\(args.version)"
+        if args.corefile != "" {
+            files: "./Corefile": args.corefile
+        }
+    }
+}
+
