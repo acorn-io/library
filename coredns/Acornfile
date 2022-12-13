@@ -1,11 +1,11 @@
 args: {
-	// Number of replicas to run
+	// Number of replicas to run (example: --scale 1)
     scale: 1
 
-    // String of a Corefile to run with
-    corefile: ""
+    // YAML file where each key is a filename and its value is the content of that file. (example: --configs @config.yaml)
+    configs: {}
 
-    // Version of CoreDNS to run
+    // Version of CoreDNS to run (example: --version 1.10.0)
     version: "1.10.0"
 }
 
@@ -14,9 +14,21 @@ containers: {
         scale: args.scale
         ports: "53/udp"
         image: "docker.io/coredns/coredns:\(args.version)"
-        if args.corefile != "" {
-            files: "./Corefile": args.corefile
-        }
+        
+        // Since CoreDNS runs in "/" we want to work of a non-root directory,
+        // mount our configs there, and run from that directory.
+        workdir: "/app"
+        dirs: "/app": "secret://coredns-configs"
     }
 }
 
+secrets : {
+    "coredns-configs": {
+        type: "opaque"
+        data: {
+            for k,v in args.configs {
+                "\(k)": "\(v)"
+            }
+        }
+    }
+}
