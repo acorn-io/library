@@ -50,6 +50,32 @@ containers: {
 			}
 		}
 	}
+	if args.storageCache == "redis" {
+		redis: {
+			image: "redis:7-alpine"
+			ports: "6379/tcp"
+
+		}
+	}
+}
+
+
+if args.storageCache == "redis" {
+	containers: {
+	    redis: {
+	    	image: "redis:7-alpine"
+	    	ports: "6379/tcp"
+	    	env: {
+				REDISCLI_AUTH: "secret://redis-auth/token"
+			}	
+	    }
+	}
+	secrets: {
+		"redis-auth": {
+			type: "token"
+			params: length: 32
+		}
+	}
 }
 
 jobs: {
@@ -69,17 +95,6 @@ if len(args.storageConfig) == 0 {
 	volumes: {
 		"registry-data": {}
 	}	
-}
-
-acorns: {
-	if args.storageCache == "redis" {
-		redis: {
-			build: "../redis"
-			ports: {
-				"6379:6379/tcp"
-			}
-		}
-	}
 }
 
 secrets: {
@@ -148,7 +163,7 @@ localData: {
 				db:           0
 		} 
 		registryConfig: redis: {
-			password:     "${secret://redis.redis-auth/token}"
+			password:     "${secret://redis-auth/token}"
 			dialtimeout:  "10ms"
 			readtimeout:  "10ms"
 			writetimeout: "10ms"
