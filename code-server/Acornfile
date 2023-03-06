@@ -1,0 +1,97 @@
+args: {
+    password: ""
+
+    // Check out a git repo on startup.
+    gitRepo: ""
+}
+containers: "code-server": {
+   build: context: "." 
+   ports: publish: "8443/http"
+   env: {
+    PASSWORD: "secret://code-server-password/token"
+   }
+   dirs: {
+    "/config": "volume://src-volume"
+   }
+   sidecars: {
+    "install-extensions": {
+        init: true
+        build: context: "."
+        dirs: {
+            "/config": "volume://src-volume"
+        }
+        files: {
+            "/acorn/bootstrap.sh": "\(localData.extensions.bootstrap)"
+        }
+        command: [
+            "sh",
+            "-c",
+            "/acorn/bootstrap.sh",
+        ]
+     }
+     if args.gitRepo != "" {
+        "git-checkout": {
+            init: true
+            image: "alpine/git:v2.36.3"
+            dirs: {
+                "/config": "volume://src-volume"
+            }
+            files: {
+                "/acorn/init.sh": "\(localData.git.initScript)"
+            }
+            entrypoint: "/bin/sh /acorn/init.sh"
+        }
+     }
+   }
+}
+
+secrets: "code-server-password": {
+    type: "token"
+    data: {
+        token: args.password
+    }
+}
+
+volumes: "src-volume": {}
+
+localData: {
+    code: {
+        uid: 911
+        gid: 911
+    }
+    git: {
+        sshCommand: "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
+        user:       "root"
+        initScript: """
+        #!/bin/sh
+        set -x
+        set -e
+        ssh_dir="/\(localData.git.user)/.ssh/"
+        export GIT_SSH_COMMAND="\(localData.git.sshCommand)"
+
+        /bin/mkdir -p ${ssh_dir}
+        /bin/chmod 700 ${ssh_dir}
+        # sometimes the keys arent mounted
+        sleep 3
+        files=$(ls /acorn/ssh|wc -l)
+        if [ "${files}" -gt "0" ]; then
+          cp /acorn/ssh/* ${ssh_dir}
+          chmod 600 ${ssh_dir}/*
+        fi
+
+        if [ -d "/config/workspace/src_repo" ]; then
+          exit 0
+        fi
+        git clone \(args.gitRepo) /config/workspace/src_repo && chown -R \(localData.code.uid):\(localData.code.gid) /config/workspace/src_repo
+        """
+    }
+    extensions: {
+        bootstrap: """
+        #!/bin/sh
+        set -x
+        set -e
+        curl -L https://github.com/acorn-io/vscode-acorn/releases/download/v0.2.1/acorn-0.2.1.vsix > /tmp/acorn.vsix
+        install-extension /tmp/acorn.vsix
+        """
+    }
+}
